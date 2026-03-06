@@ -137,6 +137,7 @@
   // --- Agent selector dropdown ---
   let selectorEl = null;
   let currentAgent = "codex";
+  let currentModel = "";
 
   function createAgentSelector() {
     console.log("[Agentation] Creating agent selector, agentApiUrl:", agentApiUrl);
@@ -152,11 +153,46 @@
     select.id = "agentation-agent-select";
     select.style.cssText = "border:1px solid #d0d0d0;border-radius:4px;padding:3px 6px;font-size:12px;background:white;cursor:pointer;outline:none;color:#333;";
 
+    const modelLabel = document.createElement("span");
+    modelLabel.textContent = "Model:";
+    modelLabel.style.cssText = "color:#666;font-weight:500;";
+
+    const modelSelect = document.createElement("select");
+    modelSelect.id = "agentation-model-select";
+    modelSelect.style.cssText = "border:1px solid #d0d0d0;border-radius:4px;padding:3px 6px;font-size:12px;background:white;cursor:pointer;outline:none;color:#333;max-width:220px;";
+
     const agents = [
       { value: "codex", label: "⚡ Codex" },
       { value: "claude", label: "✴️ Claude" },
       { value: "openclaw", label: "🦞 OpenClaw" },
+      { value: "opencode", label: "🧠 OpenCode" },
+      { value: "cursor", label: "🖱️ Cursor" },
+      { value: "kiro", label: "🪄 Kiro" },
     ];
+
+    const MODEL_OPTIONS = {
+      codex: ["", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2-codex"],
+      claude: ["", "default", "sonnet", "opus", "haiku", "opusplan"],
+      opencode: ["", "opencode/gpt-5.1-codex", "opencode/gpt-5.2", "anthropic/claude-sonnet-4-5"],
+      cursor: ["", "gpt-5.2", "gpt-5.1", "claude-sonnet-4-6", "claude-opus-4-6"],
+      kiro: ["", "default"],
+      openclaw: [""],
+    };
+
+    function refreshModelOptions() {
+      const options = MODEL_OPTIONS[currentAgent] || [""];
+      modelSelect.innerHTML = "";
+      options.forEach((m) => {
+        const opt = document.createElement("option");
+        opt.value = m;
+        opt.textContent = m || "(default)";
+        modelSelect.appendChild(opt);
+      });
+      if (!options.includes(currentModel)) {
+        currentModel = options[0] || "";
+      }
+      modelSelect.value = currentModel;
+    }
 
     agents.forEach(({ value, label: text }) => {
       const opt = document.createElement("option");
@@ -166,18 +202,35 @@
       select.appendChild(opt);
     });
 
+    refreshModelOptions();
+
     select.addEventListener("change", async () => {
       currentAgent = select.value;
       localStorage.setItem("agentation-selected-agent", currentAgent);
+      refreshModelOptions();
       try {
         await fetch(agentApiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ agent: currentAgent }),
+          body: JSON.stringify({ agent: currentAgent, model: currentModel }),
         });
         console.log(`[Agentation] Agent changed to: ${currentAgent}`);
       } catch (err) {
         console.warn("[Agentation] Failed to update agent on server:", err);
+      }
+    });
+
+    modelSelect.addEventListener("change", async () => {
+      currentModel = modelSelect.value;
+      localStorage.setItem("agentation-selected-model", currentModel);
+      try {
+        await fetch(agentApiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: currentModel }),
+        });
+      } catch (err) {
+        console.warn("[Agentation] Failed to update model on server:", err);
       }
     });
 
@@ -339,30 +392,48 @@
 
     selectorEl.appendChild(label);
     selectorEl.appendChild(select);
+    selectorEl.appendChild(modelLabel);
+    selectorEl.appendChild(modelSelect);
     selectorEl.appendChild(commitBtn);
     selectorEl.appendChild(revertBtn);
     document.body.appendChild(selectorEl);
 
     // Load saved preference
     const saved = localStorage.getItem("agentation-selected-agent");
+    const savedModel = localStorage.getItem("agentation-selected-model") || "";
     if (saved && agents.some((a) => a.value === saved)) {
       currentAgent = saved;
       select.value = saved;
-      // Sync to server
-      fetch(agentApiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent: currentAgent }),
-      }).catch(() => {});
     }
+    currentModel = savedModel;
+    refreshModelOptions();
 
-    // Fetch current server setting
+    // Fetch current server setting + installed map
     if (agentApiUrl) {
       fetch(agentApiUrl).then((r) => r.json()).then((data) => {
-        if (data.current && !saved) {
+        if (data.installed && typeof data.installed === "object") {
+          Array.from(select.options).forEach((opt) => {
+            const ok = !!data.installed[opt.value];
+            opt.disabled = !ok;
+            const base = agents.find((a) => a.value === opt.value)?.label || opt.value;
+            opt.text = ok ? base : `${base} (not installed)`;
+          });
+        }
+        if (data.current && (!saved || !data.installed || data.installed[saved])) {
           currentAgent = data.current;
           select.value = data.current;
         }
+        if (typeof data.model === "string" && !savedModel) {
+          currentModel = data.model;
+        }
+        refreshModelOptions();
+      }).catch(() => {});
+
+      // Sync current selection to server
+      fetch(agentApiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent: currentAgent, model: currentModel }),
       }).catch(() => {});
     }
   }
@@ -376,10 +447,20 @@
         const data = JSON.parse(event.data);
 
         // Sync agent selector if server changed
-        if (data.type === "agent-changed" && data.agent) {
-          currentAgent = data.agent;
-          const sel = document.getElementById("agentation-agent-select");
-          if (sel) sel.value = data.agent;
+        if (data.type === "agent-changed") {
+          if (data.agent) {
+            currentAgent = data.agent;
+            const sel = document.getElementById("agentation-agent-select");
+            if (sel) sel.value = data.agent;
+          }
+          if (typeof data.model === "string") {
+            currentModel = data.model;
+            const msel = document.getElementById("agentation-model-select");
+            if (msel) {
+              refreshModelOptions();
+              msel.value = data.model;
+            }
+          }
         }
 
         // Show status indicator

@@ -6,9 +6,22 @@ const AGENTS = [
   { value: "codex", label: "⚡ Codex" },
   { value: "claude", label: "✴️ Claude" },
   { value: "openclaw", label: "🦞 OpenClaw" },
-];
+  { value: "opencode", label: "🧠 OpenCode" },
+  { value: "cursor", label: "🖱️ Cursor" },
+  { value: "kiro", label: "🪄 Kiro" },
+] as const;
+
+const MODEL_OPTIONS: Record<string, string[]> = {
+  codex: ["", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2-codex"],
+  claude: ["", "default", "sonnet", "opus", "haiku", "opusplan"],
+  opencode: ["", "opencode/gpt-5.1-codex", "opencode/gpt-5.2", "anthropic/claude-sonnet-4-5"],
+  cursor: ["", "gpt-5.2", "gpt-5.1", "claude-sonnet-4-6", "claude-opus-4-6"],
+  kiro: ["", "default"],
+  openclaw: [""],
+};
 
 const STORAGE_KEY = "agentation-selected-agent";
+const MODEL_STORAGE_KEY = "agentation-selected-model";
 
 type CommitItem = {
   hash: string;
@@ -27,6 +40,11 @@ export function AgentSelect({
     if (typeof window === "undefined") return "codex";
     return localStorage.getItem(STORAGE_KEY) || "codex";
   });
+  const [model, setModel] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem(MODEL_STORAGE_KEY) || "";
+  });
+  const [installed, setInstalled] = useState<Record<string, boolean>>({});
 
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showRevertModal, setShowRevertModal] = useState(false);
@@ -40,16 +58,34 @@ export function AgentSelect({
   const gitRecentUrl = useMemo(() => apiUrl.replace(/\/agent$/, "/git/recent?limit=10"), [apiUrl]);
   const gitRevertUrl = useMemo(() => apiUrl.replace(/\/agent$/, "/git/revert"), [apiUrl]);
 
+  const syncAgentConfig = async (next: { agent?: string; model?: string }) => {
+    const res = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || res.statusText);
+    return data;
+  };
+
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) {
-      fetch(apiUrl)
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.current) setAgent(data.current);
-        })
-        .catch(() => {});
-    }
+    fetch(apiUrl)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.current) {
+          setAgent(data.current);
+          localStorage.setItem(STORAGE_KEY, data.current);
+        }
+        if (typeof data.model === "string") {
+          setModel(data.model);
+          localStorage.setItem(MODEL_STORAGE_KEY, data.model);
+        }
+        if (data.installed && typeof data.installed === "object") {
+          setInstalled(data.installed);
+        }
+      })
+      .catch(() => {});
   }, [apiUrl]);
 
   useEffect(() => {
@@ -57,26 +93,38 @@ export function AgentSelect({
     es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === "agent-changed" && data.agent) {
-          setAgent(data.agent);
-          localStorage.setItem(STORAGE_KEY, data.agent);
+        if (data.type === "agent-changed") {
+          if (data.agent) {
+            setAgent(data.agent);
+            localStorage.setItem(STORAGE_KEY, data.agent);
+          }
+          if (typeof data.model === "string") {
+            setModel(data.model);
+            localStorage.setItem(MODEL_STORAGE_KEY, data.model);
+          }
         }
       } catch {}
     };
     return () => es.close();
   }, [sseUrl]);
 
-  const handleChange = async (newAgent: string) => {
+  const handleAgentChange = async (newAgent: string) => {
     setAgent(newAgent);
     localStorage.setItem(STORAGE_KEY, newAgent);
     try {
-      await fetch(apiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent: newAgent }),
-      });
-    } catch (err) {
-      console.warn("[Agentation] Failed to update agent on server:", err);
+      await syncAgentConfig({ agent: newAgent, model });
+    } catch (err: any) {
+      window.alert(`Failed to set agent: ${err?.message || "unknown error"}`);
+    }
+  };
+
+  const handleModelChange = async (newModel: string) => {
+    setModel(newModel);
+    localStorage.setItem(MODEL_STORAGE_KEY, newModel);
+    try {
+      await syncAgentConfig({ model: newModel });
+    } catch (err: any) {
+      window.alert(`Failed to set model: ${err?.message || "unknown error"}`);
     }
   };
 
@@ -95,11 +143,9 @@ export function AgentSelect({
     setBusy(true);
     try {
       let data: any;
-      if (mode === "agent") {
-        data = await postJson(gitAutoUrl, { push: false });
-      } else if (mode === "agent-push") {
-        data = await postJson(gitAutoUrl, { push: true });
-      } else {
+      if (mode === "agent") data = await postJson(gitAutoUrl, { push: false });
+      else if (mode === "agent-push") data = await postJson(gitAutoUrl, { push: true });
+      else {
         if (!message.trim()) {
           window.alert("Commit message required for manual commit.");
           return;
@@ -152,6 +198,7 @@ export function AgentSelect({
   };
 
   const posStyle = position === "bottom-left" ? { left: "20px" } : { right: "20px" };
+  const modelOptions = MODEL_OPTIONS[agent] || [""];
 
   return (
     <>
@@ -171,16 +218,36 @@ export function AgentSelect({
           borderRadius: "8px",
           boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
           border: "1px solid #e0e0e0",
+          flexWrap: "wrap",
+          maxWidth: "min(92vw, 860px)",
         }}
       >
         <span style={{ color: "#666", fontWeight: 500 }}>Agent:</span>
         <select
           value={agent}
-          onChange={(e) => handleChange(e.target.value)}
+          onChange={(e) => handleAgentChange(e.target.value)}
           style={{ border: "1px solid #d0d0d0", borderRadius: "4px", padding: "3px 6px", fontSize: "12px", background: "white", cursor: "pointer", outline: "none", color: "#333" }}
         >
-          {AGENTS.map(({ value, label }) => (
-            <option key={value} value={value}>{label}</option>
+          {AGENTS.map(({ value, label }) => {
+            const ok = installed[value] ?? true;
+            return (
+              <option key={value} value={value} disabled={!ok}>
+                {ok ? label : `${label} (not installed)`}
+              </option>
+            );
+          })}
+        </select>
+
+        <span style={{ color: "#666", fontWeight: 500 }}>Model:</span>
+        <select
+          value={model}
+          onChange={(e) => handleModelChange(e.target.value)}
+          style={{ border: "1px solid #d0d0d0", borderRadius: "4px", padding: "3px 6px", fontSize: "12px", background: "white", cursor: "pointer", outline: "none", color: "#333", maxWidth: "220px" }}
+        >
+          {modelOptions.map((m) => (
+            <option key={m || "default"} value={m}>
+              {m ? m : "(default)"}
+            </option>
           ))}
         </select>
 

@@ -117,26 +117,82 @@ async function resolveAnnotations(annotations) {
 }
 
 // ---- AGENT BACKENDS ----
-const DEFAULT_AGENT = process.env.AGENTATION_AGENT || "codex";
+const AGENT_DEFS = {
+  codex: { label: "Codex", bin: "codex", supportsModel: true },
+  claude: { label: "Claude Code", bin: "claude", supportsModel: true },
+  openclaw: { label: "OpenClaw", bin: "openclaw", supportsModel: false },
+  opencode: { label: "OpenCode", bin: "opencode", supportsModel: true },
+  cursor: { label: "Cursor", bin: "agent", supportsModel: true },
+  kiro: { label: "Kiro", bin: "kiro", supportsModel: true },
+};
+const AGENT_ORDER = ["codex", "claude", "openclaw", "opencode", "cursor", "kiro"];
 
-function getAgentCommand(agentName, prompt) {
+function isCommandAvailable(bin) {
+  try {
+    execSync(`command -v ${bin}`, { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getInstalledMap() {
+  const out = {};
+  for (const key of AGENT_ORDER) {
+    out[key] = isCommandAvailable(AGENT_DEFS[key].bin);
+  }
+  return out;
+}
+
+const INSTALLED_AGENTS = getInstalledMap();
+const DEFAULT_AGENT = INSTALLED_AGENTS[process.env.AGENTATION_AGENT || "codex"]
+  ? (process.env.AGENTATION_AGENT || "codex")
+  : (AGENT_ORDER.find((k) => INSTALLED_AGENTS[k]) || "codex");
+
+function getAgentCommand(agentName, prompt, model) {
+  const safeModel = model ? String(model).trim() : "";
   switch (agentName) {
-    case "codex":
-      return { bin: "codex", args: ["--full-auto", "exec", prompt], label: "Codex" };
-    case "claude":
-      return { bin: "claude", args: ["-p", prompt, "--allowedTools", "Edit,Write,Read,Bash"], label: "Claude Code" };
+    case "codex": {
+      const args = ["--full-auto"];
+      if (safeModel) args.push("-m", safeModel);
+      args.push("exec", prompt);
+      return { bin: "codex", args, label: "Codex" };
+    }
+    case "claude": {
+      const args = [];
+      if (safeModel) args.push("--model", safeModel);
+      args.push("-p", prompt, "--allowedTools", "Edit,Write,Read,Bash");
+      return { bin: "claude", args, label: "Claude Code" };
+    }
     case "openclaw":
       return {
         bin: "openclaw",
         args: ["agent", "--message", prompt, "--no-interactive"],
         label: "OpenClaw",
       };
+    case "opencode": {
+      const args = ["run"];
+      if (safeModel) args.push("--model", safeModel);
+      args.push(prompt);
+      return { bin: "opencode", args, label: "OpenCode" };
+    }
+    case "cursor": {
+      const args = ["-p", prompt];
+      if (safeModel) args.push("--model", safeModel);
+      return { bin: "agent", args, label: "Cursor" };
+    }
+    case "kiro": {
+      const args = ["chat"];
+      if (safeModel) args.push("--model", safeModel);
+      args.push(prompt);
+      return { bin: "kiro", args, label: "Kiro" };
+    }
     default:
       return { bin: agentName, args: [prompt], label: agentName };
   }
 }
 
-function spawnCodingAgent(annotations, agentName) {
+function spawnCodingAgent(annotations, agentName, modelName) {
   agentName = agentName || DEFAULT_AGENT;
   const pageUrl = annotations[0]?.url || "";
   const sessionKey = makeSessionKey(pageUrl, agentName);
@@ -204,7 +260,7 @@ ${feedbackBlock}
 ${projectType.instructions}`;
 
   const annotationIds = annotations.map((a) => a.id?.toString()).filter(Boolean);
-  const cmd = getAgentCommand(agentName, prompt);
+  const cmd = getAgentCommand(agentName, prompt, modelName);
 
   console.log(`\n[${new Date().toISOString()}] Spawning ${cmd.label} agent for ${annotations.length} annotation(s)...`);
 
@@ -212,7 +268,7 @@ ${projectType.instructions}`;
   fs.writeFileSync(`${PROJECT_DIR}/last-agent-prompt.md`, prompt);
 
   // Notify browser: agent is working
-  broadcastStatus("processing", annotationIds, `${cmd.label} working on ${annotations.length} annotation(s)...`);
+  broadcastStatus("processing", annotationIds, `${cmd.label}${modelName ? ` (${modelName})` : ""} working on ${annotations.length} annotation(s)...`);
 
   const agent = spawn(cmd.bin, cmd.args, {
     cwd: PROJECT_DIR,
@@ -250,12 +306,14 @@ ${projectType.instructions}`;
 }
 
 let selectedAgent = DEFAULT_AGENT;
+let selectedModel = "";
 
 function flushBatch() {
   if (pendingAnnotations.length === 0) return;
 
   const batch = [...pendingAnnotations];
   const agentForBatch = selectedAgent;
+  const modelForBatch = selectedModel;
   pendingAnnotations = [];
   batchTimer = null;
 
@@ -263,11 +321,11 @@ function flushBatch() {
   for (const a of batch) {
     fs.appendFileSync(
       `${PROJECT_DIR}/feedback.jsonl`,
-      JSON.stringify({ ...a, agent: agentForBatch, timestamp: new Date().toISOString() }) + "\n"
+      JSON.stringify({ ...a, agent: agentForBatch, model: modelForBatch, timestamp: new Date().toISOString() }) + "\n"
     );
   }
 
-  spawnCodingAgent(batch, agentForBatch);
+  spawnCodingAgent(batch, agentForBatch, modelForBatch);
 }
 
 // SSE clients waiting for completion events
@@ -298,14 +356,17 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Agent selection endpoint
-  // GET /agent — returns current agent and available agents
-  // POST /agent — set agent: {"agent":"codex"|"claude"|"openclaw"}
+  // GET /agent — returns current agent, model, and installed map
+  // POST /agent — set {"agent":"codex", "model":"..."}
   if (req.url === "/agent") {
     if (req.method === "GET") {
+      const installed = getInstalledMap();
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
         current: selectedAgent,
-        available: ["codex", "claude", "openclaw"],
+        model: selectedModel,
+        available: AGENT_ORDER,
+        installed,
       }));
       return;
     }
@@ -314,14 +375,27 @@ const server = http.createServer(async (req, res) => {
       req.on("data", (chunk) => (body += chunk));
       req.on("end", () => {
         try {
-          const { agent } = JSON.parse(body);
+          const { agent, model } = JSON.parse(body || "{}");
           if (agent) {
+            if (!AGENT_DEFS[agent]) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: `Unknown agent: ${agent}` }));
+              return;
+            }
+            if (!isCommandAvailable(AGENT_DEFS[agent].bin)) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: `Agent '${agent}' is not installed on this system` }));
+              return;
+            }
             selectedAgent = agent;
             console.log(`[CONFIG] Agent changed to: ${agent}`);
-            broadcast({ type: "agent-changed", agent: selectedAgent });
           }
+          if (typeof model === "string") {
+            selectedModel = model.trim();
+          }
+          broadcast({ type: "agent-changed", agent: selectedAgent, model: selectedModel });
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ current: selectedAgent }));
+          res.end(JSON.stringify({ current: selectedAgent, model: selectedModel }));
         } catch (err) {
           res.writeHead(400);
           res.end(JSON.stringify({ error: err.message }));
@@ -492,14 +566,17 @@ const server = http.createServer(async (req, res) => {
     req.on("end", async () => {
       try {
         const payload = JSON.parse(body);
-        const { event, annotation, url, agent: payloadAgent } = payload;
+        const { event, annotation, url, agent: payloadAgent, model: payloadModel } = payload;
 
-        // Allow webhook payload to override agent selection
-        if (payloadAgent && ["codex", "claude", "openclaw"].includes(payloadAgent)) {
+        // Allow webhook payload to override agent/model selection
+        if (payloadAgent && AGENT_DEFS[payloadAgent] && isCommandAvailable(AGENT_DEFS[payloadAgent].bin)) {
           selectedAgent = payloadAgent;
         }
+        if (typeof payloadModel === "string") {
+          selectedModel = payloadModel.trim();
+        }
 
-        console.log(`[${new Date().toISOString()}] Event: ${event} (agent: ${selectedAgent})`);
+        console.log(`[${new Date().toISOString()}] Event: ${event} (agent: ${selectedAgent}${selectedModel ? ` model:${selectedModel}` : ""})`);
 
         if (event === "annotation.add" && annotation) {
           console.log(`  → ${annotation.comment} (${annotation.element})`);
