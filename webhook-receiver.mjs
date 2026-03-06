@@ -1,6 +1,7 @@
 import http from "node:http";
 import { spawn, execSync } from "node:child_process";
 import fs from "node:fs";
+import crypto from "node:crypto";
 
 // ---- CONFIGURE THESE ----
 const PORT = process.env.AGENTATION_PORT || 4848;
@@ -13,6 +14,72 @@ let batchTimer = null;
 // Session context persistence (for CLI "resume" behavior)
 const SESSION_STORE_PATH = `${PROJECT_DIR}/.agentation-sessions.json`;
 const MAX_SESSION_ENTRIES = parseInt(process.env.AGENTATION_MAX_SESSION_ENTRIES || "20", 10);
+
+// Outbound webhook subscriptions (Remarq-inspired)
+const WEBHOOK_STORE_PATH = `${PROJECT_DIR}/.agentation-webhooks.json`;
+const WEBHOOK_EVENTS = ["annotation.queued", "annotation.resolved", "agent.status", "git.result"];
+
+function loadWebhookStore() {
+  try {
+    if (!fs.existsSync(WEBHOOK_STORE_PATH)) return [];
+    const parsed = JSON.parse(fs.readFileSync(WEBHOOK_STORE_PATH, "utf8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveWebhookStore(items) {
+  try {
+    fs.writeFileSync(WEBHOOK_STORE_PATH, JSON.stringify(items, null, 2));
+  } catch (err) {
+    console.error(`[webhooks] failed to save store: ${err.message}`);
+  }
+}
+
+async function deliverWebhookWithRetry(webhook, payload, attempts = 3) {
+  const body = JSON.stringify(payload);
+  const signature = crypto.createHmac("sha256", webhook.secret).update(body).digest("hex");
+
+  let delayMs = 1000;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch(webhook.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Agentation-Signature": signature,
+          "X-Agentation-Event": payload.event,
+        },
+        body,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok) return true;
+    } catch {}
+
+    if (i < attempts - 1) {
+      await new Promise((r) => setTimeout(r, delayMs));
+      delayMs *= 2;
+    }
+  }
+  return false;
+}
+
+function emitWebhookEvent(event, data) {
+  const hooks = loadWebhookStore().filter((w) => w.active !== false && Array.isArray(w.events) && w.events.includes(event));
+  if (!hooks.length) return;
+  const payload = {
+    event,
+    created_at: new Date().toISOString(),
+    data,
+  };
+  hooks.forEach((h) => {
+    deliverWebhookWithRetry(h, payload).catch(() => {});
+  });
+}
 
 function loadSessionStore() {
   try {
@@ -105,11 +172,24 @@ function broadcastStatus(type, ids, detail) {
   const event = { type, ids, ...(detail && { detail }) };
   console.log(`  Broadcasting ${type} to ${sseClients.size} client(s): ${ids.join(", ")}${detail ? ` (${detail})` : ""}`);
   broadcast(event);
+
+  if (type === "processing" || type === "queued" || type === "error") {
+    emitWebhookEvent("agent.status", { type, ids, detail: detail || "" });
+  }
 }
 
 function broadcastResolved(annotations) {
   const ids = annotations.map((a) => a.id?.toString()).filter(Boolean);
   broadcastStatus("resolved", ids);
+  emitWebhookEvent("annotation.resolved", {
+    ids,
+    annotations: annotations.map((a) => ({ id: a.id, comment: a.comment, element: a.element, url: a.url })),
+  });
+}
+
+function broadcastGitResult(status, detail) {
+  broadcast({ type: "git-result", status, detail });
+  emitWebhookEvent("git.result", { status, detail });
 }
 
 async function resolveAnnotations(annotations) {
@@ -524,6 +604,175 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.url === "/health" && req.method === "GET") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "ok" }));
+    return;
+  }
+
+  if (req.url === "/openapi.json" && req.method === "GET") {
+    const spec = {
+      openapi: "3.0.0",
+      info: { title: "Agentation Workflow API", version: "1.0.0" },
+      paths: {
+        "/health": { get: { summary: "Health check" } },
+        "/agent": { get: { summary: "Get selected agent/model" }, post: { summary: "Set selected agent/model" } },
+        "/agent/models": { get: { summary: "List models for agent" } },
+        "/events": { get: { summary: "SSE stream" } },
+        "/webhook": { post: { summary: "Receive Agentation annotation events" } },
+        "/git/recent": { get: { summary: "Recent git commits" } },
+        "/git/revert": { post: { summary: "Revert selected commit" } },
+        "/git/restore-snapshot": { post: { summary: "Restore snapshot from commit" } },
+        "/git/commit": { post: { summary: "Commit changes" } },
+        "/git/auto-commit": { post: { summary: "Auto-generate commit message and commit" } },
+        "/webhooks": {
+          get: { summary: "List outbound webhooks" },
+          post: { summary: "Register outbound webhook" },
+          patch: { summary: "Update outbound webhook" },
+          delete: { summary: "Delete outbound webhook" },
+        },
+      },
+      components: {
+        schemas: {
+          OutboundWebhook: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              url: { type: "string" },
+              events: { type: "array", items: { type: "string" } },
+              active: { type: "boolean" },
+              created_at: { type: "string" },
+            },
+          },
+        },
+      },
+    };
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(spec, null, 2));
+    return;
+  }
+
+  if (req.url === "/webhooks" && req.method === "GET") {
+    const hooks = loadWebhookStore().map(({ secret, ...rest }) => rest);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ object: "list", data: hooks, events: WEBHOOK_EVENTS }));
+    return;
+  }
+
+  if (req.url === "/webhooks" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      try {
+        const { url, secret, events } = JSON.parse(body || "{}");
+        if (!url || !secret || !Array.isArray(events) || !events.length) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "url, secret, and events[] are required" }));
+          return;
+        }
+        if (!events.every((e) => WEBHOOK_EVENTS.includes(e))) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: `events must be subset of: ${WEBHOOK_EVENTS.join(", ")}` }));
+          return;
+        }
+        const hooks = loadWebhookStore();
+        if (hooks.some((h) => h.url === url)) {
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "webhook url already exists" }));
+          return;
+        }
+        const item = {
+          id: `whk_${crypto.randomBytes(6).toString("hex")}`,
+          url,
+          secret,
+          events,
+          active: true,
+          created_at: new Date().toISOString(),
+        };
+        hooks.push(item);
+        saveWebhookStore(hooks);
+        const { secret: _omit, ...safe } = item;
+        res.writeHead(201, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(safe));
+      } catch (err) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (req.url === "/webhooks" && req.method === "PATCH") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      try {
+        const { id, url, events, active } = JSON.parse(body || "{}");
+        if (!id) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "id is required" }));
+          return;
+        }
+        const hooks = loadWebhookStore();
+        const idx = hooks.findIndex((h) => h.id === id);
+        if (idx < 0) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "webhook not found" }));
+          return;
+        }
+        if (url) hooks[idx].url = url;
+        if (Array.isArray(events)) {
+          if (!events.every((e) => WEBHOOK_EVENTS.includes(e))) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: `events must be subset of: ${WEBHOOK_EVENTS.join(", ")}` }));
+            return;
+          }
+          hooks[idx].events = events;
+        }
+        if (typeof active === "boolean") hooks[idx].active = active;
+        saveWebhookStore(hooks);
+        const { secret: _omit, ...safe } = hooks[idx];
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(safe));
+      } catch (err) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (req.url === "/webhooks" && req.method === "DELETE") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      try {
+        const { id } = JSON.parse(body || "{}");
+        if (!id) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "id is required" }));
+          return;
+        }
+        const hooks = loadWebhookStore();
+        const idx = hooks.findIndex((h) => h.id === id);
+        if (idx < 0) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "webhook not found" }));
+          return;
+        }
+        const [deleted] = hooks.splice(idx, 1);
+        saveWebhookStore(hooks);
+        const { secret: _omit, ...safe } = deleted;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(safe));
+      } catch (err) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
   if (req.url.startsWith("/agent/models") && req.method === "GET") {
     try {
       const u = new URL(req.url, `http://localhost:${PORT}`);
@@ -704,12 +953,12 @@ const server = http.createServer(async (req, res) => {
         }
 
         const detail = pushed ? `Reverted ${target} and pushed` : `Reverted ${target}`;
-        broadcast({ type: "git-result", status: "success", detail });
+        broadcastGitResult("success", detail);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, reverted: target, pushed, preserveAgentation: !!preserveAgentation }));
       } catch (err) {
         try { execSync("git revert --abort", { cwd: PROJECT_DIR, stdio: "pipe" }); } catch {}
-        broadcast({ type: "git-result", status: "error", detail: `Revert failed: ${err.message}` });
+        broadcastGitResult("error", `Revert failed: ${err.message}`);
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: err.message }));
       }
@@ -760,11 +1009,11 @@ const server = http.createServer(async (req, res) => {
         }
 
         const detail = pushed ? `Restored snapshot ${target} and pushed` : `Restored snapshot ${target}`;
-        broadcast({ type: "git-result", status: "success", detail });
+        broadcastGitResult("success", detail);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, restored: target, pushed, preserveAgentation: !!preserveAgentation }));
       } catch (err) {
-        broadcast({ type: "git-result", status: "error", detail: `Restore failed: ${err.message}` });
+        broadcastGitResult("error", `Restore failed: ${err.message}`);
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: err.message }));
       }
@@ -810,12 +1059,12 @@ const server = http.createServer(async (req, res) => {
         const detail = isAuto
           ? `${pushed ? "Agent committed + pushed" : "Agent committed"}: ${commitMessage}`
           : `${pushed ? "Committed + pushed" : "Committed"}: ${commitMessage}`;
-        broadcast({ type: "git-result", status: "success", detail });
+        broadcastGitResult("success", detail);
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, pushed, message: commitMessage, auto: isAuto }));
       } catch (err) {
-        broadcast({ type: "git-result", status: "error", detail: `Git action failed: ${err.message}` });
+        broadcastGitResult("error", `Git action failed: ${err.message}`);
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: err.message }));
       }
@@ -932,6 +1181,17 @@ const server = http.createServer(async (req, res) => {
           if (annId) {
             broadcastStatus("queued", [annId], `Queued (${pendingAnnotations.length} pending, agent starts in ${BATCH_WINDOW_MS / 1000}s)`);
           }
+          emitWebhookEvent("annotation.queued", {
+            id: annId || annotation.id,
+            annotation: {
+              id: annotation.id,
+              comment: annotation.comment,
+              element: annotation.element,
+              elementPath: annotation.elementPath,
+              url,
+            },
+            pendingCount: pendingAnnotations.length,
+          });
           console.log(
             `  → Queued (${pendingAnnotations.length} pending, flushing in ${BATCH_WINDOW_MS / 1000}s)`
           );
