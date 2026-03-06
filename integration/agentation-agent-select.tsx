@@ -185,15 +185,37 @@ export function AgentSelect({
         >
           <div
             style={{
-              width: "420px",
+              position: "relative",
+              width: "440px",
               maxWidth: "92vw",
               background: "white",
-              borderRadius: "10px",
-              padding: "14px",
+              borderRadius: "12px",
+              padding: "16px",
               boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
             }}
           >
-            <div style={{ fontWeight: 700, fontSize: "14px", marginBottom: "8px" }}>Save Changes</div>
+            <button
+              onClick={() => setShowModal(false)}
+              aria-label="Close"
+              style={{
+                position: "absolute",
+                top: "10px",
+                right: "10px",
+                border: "1px solid #e5e7eb",
+                borderRadius: "999px",
+                width: "26px",
+                height: "26px",
+                lineHeight: "22px",
+                background: "white",
+                cursor: "pointer",
+                fontSize: "16px",
+                color: "#666",
+              }}
+            >
+              ×
+            </button>
+
+            <div style={{ fontWeight: 700, fontSize: "15px", marginBottom: "10px" }}>Save Changes</div>
             <div style={{ fontSize: "12px", color: "#666", marginBottom: "6px" }}>Commit message</div>
             <input
               value={message}
@@ -202,18 +224,17 @@ export function AgentSelect({
               style={{
                 width: "100%",
                 border: "1px solid #d0d0d0",
-                borderRadius: "6px",
-                padding: "8px",
+                borderRadius: "8px",
+                padding: "9px 10px",
                 fontSize: "13px",
-                marginBottom: "10px",
+                marginBottom: "12px",
               }}
             />
-            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-              <button disabled={busy} onClick={() => runGitAction("manual")} style={{ border: "1px solid #d0d0d0", borderRadius: "6px", padding: "6px 10px", background: "white" }}>Commit</button>
-              <button disabled={busy} onClick={() => runGitAction("manual-push")} style={{ border: "1px solid #3b82f6", borderRadius: "6px", padding: "6px 10px", background: "#eff6ff", color: "#1d4ed8", fontWeight: 600 }}>Commit+Push</button>
-              <button disabled={busy} onClick={() => runGitAction("agent")} style={{ border: "1px solid #10b981", borderRadius: "6px", padding: "6px 10px", background: "#ecfdf5", color: "#047857", fontWeight: 600 }}>Agent Commit</button>
-              <button disabled={busy} onClick={() => runGitAction("agent-push")} style={{ border: "1px solid #059669", borderRadius: "6px", padding: "6px 10px", background: "#d1fae5", color: "#065f46", fontWeight: 700 }}>Agent Commit+Push</button>
-              <button disabled={busy} onClick={() => setShowModal(false)} style={{ marginLeft: "auto", border: "1px solid #ddd", borderRadius: "6px", padding: "6px 10px", background: "#fafafa" }}>Cancel</button>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <button disabled={busy} onClick={() => runGitAction("manual")} style={{ border: "1px solid #d0d0d0", borderRadius: "8px", padding: "8px 10px", background: "white", fontWeight: 500 }}>Commit</button>
+              <button disabled={busy} onClick={() => runGitAction("manual-push")} style={{ border: "1px solid #3b82f6", borderRadius: "8px", padding: "8px 10px", background: "#eff6ff", color: "#1d4ed8", fontWeight: 600 }}>Commit+Push</button>
+              <button disabled={busy} onClick={() => runGitAction("agent")} style={{ border: "1px solid #10b981", borderRadius: "8px", padding: "8px 10px", background: "#ecfdf5", color: "#047857", fontWeight: 600 }}>Agent Commit</button>
+              <button disabled={busy} onClick={() => runGitAction("agent-push")} style={{ border: "1px solid #059669", borderRadius: "8px", padding: "8px 10px", background: "#d1fae5", color: "#065f46", fontWeight: 700 }}>Agent Commit+Push</button>
             </div>
           </div>
         </div>

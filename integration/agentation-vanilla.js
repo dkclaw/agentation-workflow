@@ -185,17 +185,17 @@
       overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:2147483646;display:flex;align-items:center;justify-content:center;";
 
       const box = document.createElement("div");
-      box.style.cssText = "width:420px;max-width:92vw;background:white;border-radius:10px;padding:14px;box-shadow:0 8px 30px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;";
+      box.style.cssText = "position:relative;width:440px;max-width:92vw;background:white;border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;";
       box.innerHTML = `
-        <div style="font-weight:700;font-size:14px;margin-bottom:8px;">Save Changes</div>
+        <button id="ac-close" aria-label="Close" style="position:absolute;top:10px;right:10px;border:1px solid #e5e7eb;border-radius:999px;width:26px;height:26px;line-height:22px;background:white;cursor:pointer;font-size:16px;color:#666;">×</button>
+        <div style="font-weight:700;font-size:15px;margin-bottom:10px;">Save Changes</div>
         <div style="font-size:12px;color:#666;margin-bottom:6px;">Commit message</div>
-        <input id="agentation-commit-msg" type="text" placeholder="feat: update hero styles" style="width:100%;border:1px solid #d0d0d0;border-radius:6px;padding:8px;font-size:13px;margin-bottom:10px;" />
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button id="ac-manual" style="border:1px solid #d0d0d0;border-radius:6px;padding:6px 10px;background:white;cursor:pointer;">Commit</button>
-          <button id="ac-manual-push" style="border:1px solid #3b82f6;border-radius:6px;padding:6px 10px;background:#eff6ff;color:#1d4ed8;font-weight:600;cursor:pointer;">Commit+Push</button>
-          <button id="ac-agent" style="border:1px solid #10b981;border-radius:6px;padding:6px 10px;background:#ecfdf5;color:#047857;font-weight:600;cursor:pointer;">Agent Commit</button>
-          <button id="ac-agent-push" style="border:1px solid #059669;border-radius:6px;padding:6px 10px;background:#d1fae5;color:#065f46;font-weight:700;cursor:pointer;">Agent Commit+Push</button>
-          <button id="ac-cancel" style="margin-left:auto;border:1px solid #ddd;border-radius:6px;padding:6px 10px;background:#fafafa;cursor:pointer;">Cancel</button>
+        <input id="agentation-commit-msg" type="text" placeholder="feat: update hero styles" style="width:100%;border:1px solid #d0d0d0;border-radius:8px;padding:9px 10px;font-size:13px;margin-bottom:12px;" />
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <button id="ac-manual" style="border:1px solid #d0d0d0;border-radius:8px;padding:8px 10px;background:white;cursor:pointer;font-weight:500;">Commit</button>
+          <button id="ac-manual-push" style="border:1px solid #3b82f6;border-radius:8px;padding:8px 10px;background:#eff6ff;color:#1d4ed8;font-weight:600;cursor:pointer;">Commit+Push</button>
+          <button id="ac-agent" style="border:1px solid #10b981;border-radius:8px;padding:8px 10px;background:#ecfdf5;color:#047857;font-weight:600;cursor:pointer;">Agent Commit</button>
+          <button id="ac-agent-push" style="border:1px solid #059669;border-radius:8px;padding:8px 10px;background:#d1fae5;color:#065f46;font-weight:700;cursor:pointer;">Agent Commit+Push</button>
         </div>
       `;
       overlay.appendChild(box);
@@ -234,7 +234,7 @@
       box.querySelector("#ac-manual-push").addEventListener("click", () => run("manual-push"));
       box.querySelector("#ac-agent").addEventListener("click", () => run("agent"));
       box.querySelector("#ac-agent-push").addEventListener("click", () => run("agent-push"));
-      box.querySelector("#ac-cancel").addEventListener("click", close);
+      box.querySelector("#ac-close").addEventListener("click", close);
       overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
 
       setTimeout(() => input.focus(), 0);
