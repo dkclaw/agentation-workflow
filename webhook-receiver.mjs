@@ -907,6 +907,22 @@ const server = http.createServer(async (req, res) => {
     execSync(`git restore --source=HEAD -- ${pathArgs}`, { cwd: PROJECT_DIR, stdio: "pipe" });
   }
 
+  function pushWithAutoSync() {
+    try {
+      execSync("git push", { cwd: PROJECT_DIR, stdio: "pipe" });
+      return { pushed: true, autosynced: false };
+    } catch (err) {
+      const stderr = String(err?.stderr || "") + "\n" + String(err?.message || "");
+      const nonFastForward = /fetch first|non-fast-forward|rejected/i.test(stderr);
+      if (!nonFastForward) throw err;
+
+      // Remote moved ahead. Rebase local commit(s) on top and retry push.
+      execSync("git pull --rebase --autostash", { cwd: PROJECT_DIR, stdio: "pipe" });
+      execSync("git push", { cwd: PROJECT_DIR, stdio: "pipe" });
+      return { pushed: true, autosynced: true };
+    }
+  }
+
   if (req.url === "/git/revert" && req.method === "POST") {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
@@ -947,15 +963,19 @@ const server = http.createServer(async (req, res) => {
         execSync(`git commit -m ${JSON.stringify(`revert: ${subject}`)}`, { cwd: PROJECT_DIR, stdio: "pipe" });
 
         let pushed = false;
+        let autosynced = false;
         if (push) {
-          execSync("git push", { cwd: PROJECT_DIR, stdio: "pipe" });
-          pushed = true;
+          const out = pushWithAutoSync();
+          pushed = out.pushed;
+          autosynced = out.autosynced;
         }
 
-        const detail = pushed ? `Reverted ${target} and pushed` : `Reverted ${target}`;
+        const detail = pushed
+          ? `Reverted ${target} and pushed${autosynced ? " (auto-synced with remote)" : ""}`
+          : `Reverted ${target}`;
         broadcastGitResult("success", detail);
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, reverted: target, pushed, preserveAgentation: !!preserveAgentation }));
+        res.end(JSON.stringify({ ok: true, reverted: target, pushed, autosynced, preserveAgentation: !!preserveAgentation }));
       } catch (err) {
         try { execSync("git revert --abort", { cwd: PROJECT_DIR, stdio: "pipe" }); } catch {}
         broadcastGitResult("error", `Revert failed: ${err.message}`);
@@ -1003,15 +1023,19 @@ const server = http.createServer(async (req, res) => {
         execSync(`git commit -m ${JSON.stringify(`restore: snapshot from ${target.slice(0, 8)}`)}`, { cwd: PROJECT_DIR, stdio: "pipe" });
 
         let pushed = false;
+        let autosynced = false;
         if (push) {
-          execSync("git push", { cwd: PROJECT_DIR, stdio: "pipe" });
-          pushed = true;
+          const out = pushWithAutoSync();
+          pushed = out.pushed;
+          autosynced = out.autosynced;
         }
 
-        const detail = pushed ? `Restored snapshot ${target} and pushed` : `Restored snapshot ${target}`;
+        const detail = pushed
+          ? `Restored snapshot ${target} and pushed${autosynced ? " (auto-synced with remote)" : ""}`
+          : `Restored snapshot ${target}`;
         broadcastGitResult("success", detail);
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, restored: target, pushed, preserveAgentation: !!preserveAgentation }));
+        res.end(JSON.stringify({ ok: true, restored: target, pushed, autosynced, preserveAgentation: !!preserveAgentation }));
       } catch (err) {
         broadcastGitResult("error", `Restore failed: ${err.message}`);
         res.writeHead(400, { "Content-Type": "application/json" });
@@ -1051,18 +1075,20 @@ const server = http.createServer(async (req, res) => {
         execSync(`git commit -m ${JSON.stringify(commitMessage)}`, { cwd: PROJECT_DIR, stdio: "pipe" });
 
         let pushed = false;
+        let autosynced = false;
         if (push) {
-          execSync("git push", { cwd: PROJECT_DIR, stdio: "pipe" });
-          pushed = true;
+          const out = pushWithAutoSync();
+          pushed = out.pushed;
+          autosynced = out.autosynced;
         }
 
         const detail = isAuto
-          ? `${pushed ? "Agent committed + pushed" : "Agent committed"}: ${commitMessage}`
-          : `${pushed ? "Committed + pushed" : "Committed"}: ${commitMessage}`;
+          ? `${pushed ? "Agent committed + pushed" : "Agent committed"}${autosynced ? " (auto-synced with remote)" : ""}: ${commitMessage}`
+          : `${pushed ? "Committed + pushed" : "Committed"}${autosynced ? " (auto-synced with remote)" : ""}: ${commitMessage}`;
         broadcastGitResult("success", detail);
 
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, pushed, message: commitMessage, auto: isAuto }));
+        res.end(JSON.stringify({ ok: true, pushed, autosynced, message: commitMessage, auto: isAuto }));
       } catch (err) {
         broadcastGitResult("error", `Git action failed: ${err.message}`);
         res.writeHead(400, { "Content-Type": "application/json" });
