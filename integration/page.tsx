@@ -62,14 +62,14 @@ export default function Home() {
   useCompletionListener(handleResolved);
   return (
     <>
-      <div className="min-h-screen bg-[url('/ocean-wave.svg')] bg-cover bg-center bg-no-repeat flex flex-col items-center justify-center font-[Poppins]">
+      <div className="min-h-screen bg-[url('/green-wave.svg')] bg-cover bg-center bg-no-repeat flex flex-col items-center justify-center font-[Poppins]">
         {/* Header */}
         <header className="text-center mb-8 bg-gray-200 p-12 rounded-xl shadow-[0_0_36px_rgba(107,114,128,0.45)] border border-gray-300 min-w-[420px]">
           <div className="flex items-center justify-center mb-4 gap-8">
             <img
               src="https://dakotastorage.com/favicon.ico"
               alt="Dakota Storage logo"
-              className="h-16 w-16 rounded-md object-contain"
+              className="h-16 w-16 rounded-md object-contain bg-white p-1 shadow-[0_8px_18px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.85)] ring-1 ring-black/10"
             />
             <div className="flex flex-col items-start">
               <h1 className="text-4xl font-semibold text-gray-900 m-0 leading-none">
@@ -134,7 +134,7 @@ export default function Home() {
           <div className="flex gap-4 justify-center mt-2">
             <a href="#" className="hover:text-gray-900">Privacy</a>
             <a href="#" className="hover:text-gray-900">Terms</a>
-            <a href="#" className="hover:text-gray-900">Contact</a>
+            <a href="mailto:contact@example.com" className="hover:text-gray-900">Contact</a>
           </div>
         </footer>
       </div>

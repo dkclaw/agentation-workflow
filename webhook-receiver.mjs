@@ -125,6 +125,29 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Test endpoint: manually broadcast a resolution for given IDs
+  // Usage: POST /test-resolve  body: {"ids":["123","456"]}
+  if (req.method === "POST" && req.url === "/test-resolve") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      try {
+        const { ids } = JSON.parse(body);
+        console.log(`[TEST] Broadcasting resolution for IDs: ${ids}`);
+        const event = JSON.stringify({ type: "resolved", ids });
+        for (const client of sseClients) {
+          client.write(`data: ${event}\n\n`);
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, broadcast: ids, clients: sseClients.size }));
+      } catch (err) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/webhook") {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
