@@ -348,6 +348,70 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.url.startsWith("/git/recent") && req.method === "GET") {
+    try {
+      const u = new URL(req.url, `http://localhost:${PORT}`);
+      const limit = Math.max(1, Math.min(10, parseInt(u.searchParams.get("limit") || "10", 10)));
+      const format = "%H%x1f%h%x1f%s%x1f%an%x1f%ad";
+      const out = execSync(`git log -n ${limit} --date=short --pretty=format:${JSON.stringify(format)}`, { cwd: PROJECT_DIR })
+        .toString()
+        .trim();
+      const commits = out
+        ? out.split("\n").map((line) => {
+            const [hash, shortHash, subject, author, date] = line.split("\x1f");
+            return { hash, shortHash, subject, author, date };
+          })
+        : [];
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ commits }));
+    } catch (err) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `git recent failed: ${err.message}` }));
+    }
+    return;
+  }
+
+  if (req.url === "/git/revert" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      try {
+        const { commit, push } = JSON.parse(body || "{}");
+        if (!commit || !String(commit).trim()) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "commit is required" }));
+          return;
+        }
+
+        const dirty = execSync("git status --porcelain", { cwd: PROJECT_DIR }).toString().trim();
+        if (dirty) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Working tree is not clean. Commit/stash changes before revert." }));
+          return;
+        }
+
+        const target = String(commit).trim();
+        execSync(`git revert --no-edit ${JSON.stringify(target)}`, { cwd: PROJECT_DIR, stdio: "pipe" });
+
+        let pushed = false;
+        if (push) {
+          execSync("git push", { cwd: PROJECT_DIR, stdio: "pipe" });
+          pushed = true;
+        }
+
+        const detail = pushed ? `Reverted ${target} and pushed` : `Reverted ${target}`;
+        broadcast({ type: "git-result", status: "success", detail });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, reverted: target, pushed }));
+      } catch (err) {
+        broadcast({ type: "git-result", status: "error", detail: `Revert failed: ${err.message}` });
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
   if ((req.url === "/git/commit" || req.url === "/git/auto-commit") && req.method === "POST") {
     let body = "";
     req.on("data", (chunk) => (body += chunk));

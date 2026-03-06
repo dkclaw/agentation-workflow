@@ -219,8 +219,10 @@ The receiver auto-detects project type (Next.js, Vite, or static HTML) and adjus
 | `GET` | `/agent` | Get currently selected agent |
 | `POST` | `/agent` | Set selected agent |
 | `GET` | `/git/status` | Git branch + dirty state |
+| `GET` | `/git/recent?limit=10` | List recent commits for revert picker |
 | `POST` | `/git/commit` | Commit changes with provided message (optionally push) |
 | `POST` | `/git/auto-commit` | Agent-generated commit message + commit (optionally push) |
+| `POST` | `/git/revert` | Revert selected commit (optionally push) |
 | `POST` | `/test-resolve` | Debug: manually broadcast resolution (`{"ids":["..."]}`) |
 
 ---

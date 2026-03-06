@@ -169,6 +169,10 @@
     commitBtn.textContent = "Save…";
     commitBtn.style.cssText = "border:1px solid #3b82f6;border-radius:4px;padding:3px 8px;font-size:12px;background:#eff6ff;cursor:pointer;color:#1d4ed8;font-weight:600;";
 
+    const revertBtn = document.createElement("button");
+    revertBtn.textContent = "Revert…";
+    revertBtn.style.cssText = "border:1px solid #ef4444;border-radius:4px;padding:3px 8px;font-size:12px;background:#fff1f2;cursor:pointer;color:#b91c1c;font-weight:600;";
+
     async function postGit(path, payload) {
       const res = await fetch(path, {
         method: "POST",
@@ -240,11 +244,85 @@
       setTimeout(() => input.focus(), 0);
     }
 
+    async function openRevertDialog() {
+      const overlay = document.createElement("div");
+      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:2147483646;display:flex;align-items:center;justify-content:center;";
+      const box = document.createElement("div");
+      box.style.cssText = "position:relative;width:560px;max-width:94vw;background:white;border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;";
+      box.innerHTML = `
+        <button id="rv-close" aria-label="Close" style="position:absolute;top:10px;right:10px;border:1px solid #e5e7eb;border-radius:999px;width:26px;height:26px;line-height:22px;background:white;cursor:pointer;font-size:16px;color:#666;">×</button>
+        <div style="font-weight:700;font-size:15px;margin-bottom:10px;">Revert Commit</div>
+        <div style="font-size:12px;color:#666;margin-bottom:8px;">Select one of the 10 most recent commits to revert</div>
+        <div id="rv-list" style="max-height:280px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:12px;padding:4px;"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <button id="rv-revert" style="border:1px solid #ef4444;border-radius:8px;padding:8px 10px;background:#fff1f2;color:#b91c1c;font-weight:600;cursor:pointer;">Revert</button>
+          <button id="rv-revert-push" style="border:1px solid #dc2626;border-radius:8px;padding:8px 10px;background:#fee2e2;color:#7f1d1d;font-weight:700;cursor:pointer;">Revert+Push</button>
+        </div>
+      `;
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      let selected = "";
+      const close = () => overlay.remove();
+      box.querySelector("#rv-close").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+      try {
+        const res = await fetch(`${baseUrl}/git/recent?limit=10`);
+        const data = await res.json();
+        const list = box.querySelector("#rv-list");
+        const commits = Array.isArray(data.commits) ? data.commits : [];
+        if (!commits.length) {
+          list.innerHTML = '<div style="padding:12px;font-size:12px;color:#6b7280;">No commits found.</div>';
+        } else {
+          selected = commits[0].hash;
+          list.innerHTML = commits.map((c, idx) => `
+            <label style="display:block;padding:8px 10px;border-bottom:1px solid #f3f4f6;cursor:pointer;background:${idx===0?'#fef2f2':'white'}" data-hash="${c.hash}">
+              <input type="radio" name="revert-commit" value="${c.hash}" ${idx===0?'checked':''} style="margin-right:8px" />
+              <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#991b1b">${c.shortHash}</span>
+              <span style="margin-left:8px;font-size:12px">${c.subject}</span>
+              <div style="margin-left:24px;font-size:11px;color:#6b7280">${c.author} • ${c.date}</div>
+            </label>
+          `).join('');
+          list.querySelectorAll('input[name="revert-commit"]').forEach((el) => {
+            el.addEventListener('change', () => {
+              selected = el.value;
+              list.querySelectorAll('label[data-hash]').forEach((lbl) => {
+                lbl.style.background = lbl.getAttribute('data-hash') === selected ? '#fef2f2' : 'white';
+              });
+            });
+          });
+        }
+      } catch (err) {
+        box.querySelector("#rv-list").innerHTML = `<div style="padding:12px;font-size:12px;color:#b91c1c;">Failed to load commits: ${err.message || 'unknown error'}</div>`;
+      }
+
+      async function run(push) {
+        if (!selected) {
+          window.alert("Select a commit to revert.");
+          return;
+        }
+        if (!window.confirm(`Revert commit ${selected.slice(0,8)}?`)) return;
+        try {
+          await postGit(`${baseUrl}/git/revert`, { commit: selected, push });
+          window.alert(push ? "Reverted and pushed ✅" : "Reverted ✅");
+          close();
+        } catch (err) {
+          window.alert(`Revert failed: ${err.message || "unknown error"}`);
+        }
+      }
+
+      box.querySelector("#rv-revert").addEventListener("click", () => run(false));
+      box.querySelector("#rv-revert-push").addEventListener("click", () => run(true));
+    }
+
     commitBtn.addEventListener("click", openCommitDialog);
+    revertBtn.addEventListener("click", openRevertDialog);
 
     selectorEl.appendChild(label);
     selectorEl.appendChild(select);
     selectorEl.appendChild(commitBtn);
+    selectorEl.appendChild(revertBtn);
     document.body.appendChild(selectorEl);
 
     // Load saved preference
