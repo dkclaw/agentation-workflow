@@ -5,7 +5,7 @@ import fs from "node:fs";
 // ---- CONFIGURE THESE ----
 const PORT = process.env.AGENTATION_PORT || 4848;
 const PROJECT_DIR = process.env.AGENTATION_PROJECT_DIR || process.cwd();
-const BATCH_WINDOW_MS = parseInt(process.env.AGENTATION_BATCH_MS || "10000"); // Wait 10s to batch annotations
+const BATCH_WINDOW_MS = parseInt(process.env.AGENTATION_BATCH_MS || "10000");
 
 let pendingAnnotations = [];
 let batchTimer = null;

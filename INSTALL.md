@@ -111,12 +111,22 @@ That's it. The script loads React + Agentation from CDN automatically.
 
 The webhook receiver runs alongside your dev server. It receives annotations, batches them, spawns Codex to fix the code, and broadcasts resolution events.
 
+> **⚠️ CRITICAL: Always start the webhook receiver from your project directory (or set `AGENTATION_PROJECT_DIR`).** The agent uses this path as its working directory. If it points at the wrong project, the agent will edit the wrong files.
+
+**Recommended: run from your project directory (simplest, no env vars needed):**
+
 ```bash
-# From your project directory:
+cd /your/project
 node /path/to/webhook-receiver.mjs
 ```
 
-Or with environment variables:
+**Alternative: set the project directory explicitly:**
+
+```bash
+AGENTATION_PROJECT_DIR=/path/to/project node webhook-receiver.mjs
+```
+
+**With all options:**
 
 ```bash
 AGENTATION_PROJECT_DIR=/path/to/project \
@@ -187,10 +197,10 @@ Modify the `prompt` template string in `spawnCodingAgent()`. The `feedbackBlock`
 
 | Problem | Check |
 |---------|-------|
+| **Agent edits wrong files** | Most common issue! Check `AGENTATION_PROJECT_DIR` or that you started the receiver from the correct directory. Check `last-agent-prompt.md` to see what path the agent received. |
 | Annotations don't clear | Is the webhook receiver running the latest code? It doesn't hot-reload — restart after edits. |
 | SSE not connecting | `curl -N http://localhost:4848/events` should show `data: connected` |
 | Agent not spawning | Check `codex --version` and `OPENAI_API_KEY`. Check `feedback.jsonl` in project dir. |
-| Wrong files edited | Check `last-agent-prompt.md` in project dir to see what the agent received. |
 | "Not found" on /events | Old webhook receiver process running. Kill and restart. |
 
 ### Debug: Test Resolution Manually
