@@ -248,9 +248,11 @@
     const mode = activeInspector;
     if (mode === "react-grab") {
       ensureReactGrabLoaded();
+      ensureReactGrabCopyBridge();
       setAgentationUiVisible(false);
     } else if (mode === "both") {
       ensureReactGrabLoaded();
+      ensureReactGrabCopyBridge();
       setAgentationUiVisible(true);
     } else {
       setAgentationUiVisible(true);
@@ -342,18 +344,10 @@
 
     if (tryRegisterReactGrabPlugin()) return;
 
-    let attempts = 0;
     reactGrabBridgePoll = setInterval(() => {
-      attempts += 1;
       if (tryRegisterReactGrabPlugin()) {
         clearInterval(reactGrabBridgePoll);
         reactGrabBridgePoll = null;
-        return;
-      }
-      if (attempts >= 60) {
-        clearInterval(reactGrabBridgePoll);
-        reactGrabBridgePoll = null;
-        console.warn("[Floop] React Grab plugin bridge not available after waiting");
       }
     }, 500);
   }
