@@ -137,8 +137,8 @@
 
     const agents = [
       { value: "codex", label: "⚡ Codex" },
-      { value: "claude", label: "🟣 Claude" },
-      { value: "openclaw", label: "🐾 OpenClaw" },
+      { value: "claude", label: "✴️ Claude" },
+      { value: "openclaw", label: "🦞 OpenClaw" },
     ];
 
     agents.forEach(({ value, label: text }) => {

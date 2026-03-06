@@ -19,8 +19,8 @@ import { useEffect, useState } from "react";
 
 const AGENTS = [
   { value: "codex", label: "⚡ Codex" },
-  { value: "claude", label: "🟣 Claude" },
-  { value: "openclaw", label: "🐾 OpenClaw" },
+  { value: "claude", label: "✴️ Claude" },
+  { value: "openclaw", label: "🦞 OpenClaw" },
 ];
 
 const STORAGE_KEY = "agentation-selected-agent";
