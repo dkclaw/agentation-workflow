@@ -77,6 +77,46 @@
     }
   }
 
+  // --- Status indicator (vanilla DOM) ---
+  let statusEl = null;
+  const STATUS_CONFIG = {
+    queued:     { bg: "#FFF8E1", border: "#FFD54F", icon: "⏳" },
+    processing: { bg: "#E3F2FD", border: "#42A5F5", icon: "⚙️" },
+    resolved:   { bg: "#E8F5E9", border: "#66BB6A", icon: "✅" },
+    error:      { bg: "#FFEBEE", border: "#EF5350", icon: "❌" },
+  };
+  let statusHideTimer = null;
+
+  function showStatus(type, message) {
+    if (!statusEl) {
+      statusEl = document.createElement("div");
+      statusEl.id = "agentation-status";
+      statusEl.style.cssText = "position:fixed;bottom:70px;right:20px;z-index:999998;padding:8px 14px;border-radius:8px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:#333;display:flex;align-items:center;gap:6px;max-width:320px;box-shadow:0 2px 8px rgba(0,0,0,0.15);transition:opacity 0.2s;";
+      document.body.appendChild(statusEl);
+    }
+    const cfg = STATUS_CONFIG[type] || STATUS_CONFIG.processing;
+    statusEl.style.backgroundColor = cfg.bg;
+    statusEl.style.border = `1px solid ${cfg.border}`;
+    statusEl.style.opacity = "1";
+    statusEl.style.display = "flex";
+    const spinner = type === "processing" ? ' <span style="display:inline-block;width:12px;height:12px;border:2px solid #42A5F5;border-top-color:transparent;border-radius:50%;animation:agentation-spin 0.8s linear infinite"></span>' : "";
+    statusEl.innerHTML = `<span style="font-size:16px">${cfg.icon}</span><span>${message}</span>${spinner}`;
+
+    if (!document.getElementById("agentation-status-css")) {
+      const style = document.createElement("style");
+      style.id = "agentation-status-css";
+      style.textContent = "@keyframes agentation-spin{to{transform:rotate(360deg)}}";
+      document.head.appendChild(style);
+    }
+  }
+
+  function hideStatus(delayMs) {
+    if (statusHideTimer) clearTimeout(statusHideTimer);
+    statusHideTimer = setTimeout(() => {
+      if (statusEl) { statusEl.style.opacity = "0"; setTimeout(() => { if (statusEl) statusEl.style.display = "none"; }, 200); }
+    }, delayMs);
+  }
+
   function connectSSE() {
     if (!sseUrl) return;
     const es = new EventSource(sseUrl);
@@ -84,8 +124,22 @@
       if (event.data === "connected") return;
       try {
         const data = JSON.parse(event.data);
+
+        // Show status indicator
+        if (data.type === "queued") {
+          showStatus("queued", data.detail || "Annotation queued...");
+        } else if (data.type === "processing") {
+          showStatus("processing", data.detail || "Agent working...");
+        } else if (data.type === "error") {
+          showStatus("error", data.detail || "Agent error");
+          hideStatus(15000);
+        }
+
+        // Handle resolution
         if (data.type === "resolved" && data.ids?.length) {
           console.log("[Agentation] Resolved IDs received:", data.ids);
+          showStatus("resolved", `Done! ${data.ids.length} annotation(s) fixed`);
+          hideStatus(5000);
           const changed = removeFromStorage(data.ids);
           if (changed && renderFn) {
             remountCounter++;

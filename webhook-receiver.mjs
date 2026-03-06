@@ -10,13 +10,22 @@ const BATCH_WINDOW_MS = parseInt(process.env.AGENTATION_BATCH_MS || "10000");
 let pendingAnnotations = [];
 let batchTimer = null;
 
+function broadcast(eventData) {
+  const msg = JSON.stringify(eventData);
+  for (const client of sseClients) {
+    client.write(`data: ${msg}\n\n`);
+  }
+}
+
+function broadcastStatus(type, ids, detail) {
+  const event = { type, ids, ...(detail && { detail }) };
+  console.log(`  Broadcasting ${type} to ${sseClients.size} client(s): ${ids.join(", ")}${detail ? ` (${detail})` : ""}`);
+  broadcast(event);
+}
+
 function broadcastResolved(annotations) {
   const ids = annotations.map((a) => a.id?.toString()).filter(Boolean);
-  const event = JSON.stringify({ type: "resolved", ids });
-  console.log(`  Broadcasting resolved to ${sseClients.size} client(s): ${ids.join(", ")}`);
-  for (const client of sseClients) {
-    client.write(`data: ${event}\n\n`);
-  }
+  broadcastStatus("resolved", ids);
 }
 
 async function resolveAnnotations(annotations) {
@@ -74,14 +83,19 @@ ${feedbackBlock}
 - Do NOT modify any Agentation/webhook setup code or script tags
 ${projectType.instructions}`;
 
+  const annotationIds = annotations.map((a) => a.id?.toString()).filter(Boolean);
+
   console.log(`\n[${new Date().toISOString()}] Spawning Codex agent for ${annotations.length} annotation(s)...`);
 
   // Log the prompt for debugging
   fs.writeFileSync(`${PROJECT_DIR}/last-agent-prompt.md`, prompt);
 
+  // Notify browser: agent is working
+  broadcastStatus("processing", annotationIds, `Agent spawning for ${annotations.length} annotation(s)`);
+
   const agent = spawn("codex", ["--full-auto", "exec", prompt], {
     cwd: PROJECT_DIR,
-    stdio: "pipe",  // Use pipe so we can log output
+    stdio: "pipe",
     env: { ...process.env, PATH: process.env.PATH },
   });
 
@@ -91,11 +105,11 @@ ${projectType.instructions}`;
 
   agent.on("error", (err) => {
     console.error(`Agent spawn error: ${err.message}`);
+    broadcastStatus("error", annotationIds, `Agent failed to spawn: ${err.message}`);
   });
 
   agent.on("exit", (code) => {
     console.log(`\n[${new Date().toISOString()}] Codex agent exited with code ${code}`);
-    // Resolve annotations regardless of exit code — the changes were likely made
     console.log(`  Broadcasting resolution for ${annotations.length} annotation(s) to ${sseClients.size} SSE client(s)...`);
     resolveAnnotations(annotations);
   });
@@ -242,6 +256,11 @@ const server = http.createServer(async (req, res) => {
           // Reset batch timer
           if (batchTimer) clearTimeout(batchTimer);
           batchTimer = setTimeout(flushBatch, BATCH_WINDOW_MS);
+
+          const annId = annotation.id?.toString();
+          if (annId) {
+            broadcastStatus("queued", [annId], `Queued (${pendingAnnotations.length} pending, agent starts in ${BATCH_WINDOW_MS / 1000}s)`);
+          }
           console.log(
             `  → Queued (${pendingAnnotations.length} pending, flushing in ${BATCH_WINDOW_MS / 1000}s)`
           );

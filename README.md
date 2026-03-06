@@ -46,10 +46,11 @@ cd /your/project && node /path/to/webhook-receiver.mjs
 
 | File | Purpose |
 |------|---------|
-| `webhook-receiver.mjs` | Receives annotations, batches, spawns Codex, broadcasts resolution via SSE |
+| `webhook-receiver.mjs` | Receives annotations, batches, spawns Codex, broadcasts status + resolution via SSE |
+| `integration/agentation-status.tsx` | React status indicator component (queued → processing → done/error) |
 | `integration/agentation-hook.ts` | React hook for auto-resolution (SSE + localStorage cleanup + remount) |
-| `integration/page.tsx` | Minimal React/Next.js example |
-| `integration/agentation-vanilla.js` | Single `<script>` tag for plain HTML pages (loads React from CDN) |
+| `integration/page.tsx` | Minimal React/Next.js example with status indicator |
+| `integration/agentation-vanilla.js` | Single `<script>` tag for plain HTML (includes built-in status indicator) |
 | `integration/example.html` | Plain HTML example |
 | `INSTALL.md` | Agent-friendly installation guide |
 | `INTERNALS.md` | Agentation library internals (localStorage schema, API, data model) |
@@ -57,5 +58,7 @@ cd /your/project && node /path/to/webhook-receiver.mjs
 ## Requirements
 
 - Node.js 18+
-- [Codex CLI](https://github.com/openai/codex) (`npm i -g @openai/codex`)
-- `OPENAI_API_KEY` environment variable
+- A coding agent CLI on the server's PATH (at least one):
+  - [OpenAI Codex](https://github.com/openai/codex): `npm i -g @openai/codex` + `OPENAI_API_KEY`
+  - [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview): `npm i -g @anthropic-ai/claude-code` + `ANTHROPIC_API_KEY`
+  - Or any CLI agent (edit `spawnCodingAgent()` in webhook-receiver.mjs)

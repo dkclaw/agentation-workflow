@@ -6,9 +6,14 @@ This guide is designed for both humans and AI coding agents. Follow it step-by-s
 
 ## Prerequisites
 
-- Node.js 18+
-- [Codex CLI](https://github.com/openai/codex): `npm i -g @openai/codex`
-- `OPENAI_API_KEY` set in environment
+- **Node.js 18+**
+- **A coding agent CLI** (at least one must be installed on the machine running the webhook receiver):
+  - [OpenAI Codex CLI](https://github.com/openai/codex): `npm i -g @openai/codex` + set `OPENAI_API_KEY`
+  - [Claude Code CLI](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview): `npm i -g @anthropic-ai/claude-code` + set `ANTHROPIC_API_KEY`
+  - Or any CLI agent — edit `spawnCodingAgent()` in `webhook-receiver.mjs` to use your preferred agent
+- **The CLI must be available on the server's PATH** — the webhook receiver spawns it as a child process
+
+> **⚠️ Common issue:** The webhook receiver spawns the agent CLI directly. If `codex` or `claude` isn't installed or isn't on PATH, annotations will be received but nothing will happen. Verify: `which codex` or `which claude`
 
 ---
 
