@@ -13,6 +13,9 @@ const STORAGE_PREFIX = "feedback-annotations-";
  * SSE endpoint on the webhook receiver.
  * Update this to match your webhook receiver's host and port.
  */
+/**
+ * Default SSE endpoint. Override by passing `sseUrl` to useCompletionListener().
+ */
 const SSE_URL = "http://localhost:4848/events";
 
 /**

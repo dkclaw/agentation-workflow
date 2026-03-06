@@ -1,74 +1,61 @@
-# Installation & Configuration Guide
+# Agentation Workflow — Installation Guide
+
+This guide is designed for both humans and AI coding agents. Follow it step-by-step to add the Agentation visual feedback + auto-fix pipeline to any web project.
+
+---
 
 ## Prerequisites
 
 - Node.js 18+
-- A web project with React (Next.js, Vite, CRA, etc.)
-- [Codex CLI](https://github.com/openai/codex) installed globally: `npm i -g @openai/codex`
-- OpenAI API key set: `export OPENAI_API_KEY=sk-...`
+- [Codex CLI](https://github.com/openai/codex): `npm i -g @openai/codex`
+- `OPENAI_API_KEY` set in environment
 
-## Step 1: Install Agentation
+---
+
+## Choose Your Integration
+
+### Option A: React / Next.js / Vite (recommended for React apps)
+
+#### 1. Install the package
 
 ```bash
-cd /your/project
 npm install agentation
 ```
 
-## Step 2: Add the Webhook Receiver
+#### 2. Copy the completion hook
 
-Copy `webhook-receiver.mjs` to your project root:
+Copy `integration/agentation-hook.ts` into your project's source directory.
 
-```bash
-cp /path/to/agentation-workflow/webhook-receiver.mjs ./
+Update the `SSE_URL` constant if your webhook receiver runs on a different host/port:
+
+```typescript
+const SSE_URL = "http://localhost:4848/events";
 ```
 
-### Configure
-
-Edit the constants at the top of `webhook-receiver.mjs`:
-
-```javascript
-const PORT = 4848;                    // Webhook receiver port
-const PROJECT_DIR = "/your/project";  // Absolute path to your project
-const BATCH_WINDOW_MS = 10_000;       // Seconds to batch annotations before spawning agent
-```
-
-The `PROJECT_DIR` must be an absolute path — Codex runs with this as its working directory.
-
-### Start
-
-```bash
-node webhook-receiver.mjs
-```
-
-For production, use pm2 or a systemd service:
-
-```bash
-pm2 start webhook-receiver.mjs --name agentation-webhook
-```
-
-## Step 3: Add Agentation to Your Page
-
-### Option A: Full Integration (Next.js example)
-
-See `integration/page.tsx` for a complete reference. Key parts:
+#### 3. Add Agentation to your page
 
 ```tsx
-"use client";
+"use client"; // Next.js only
+
 import { useState, useCallback } from "react";
 import { Agentation } from "agentation";
 import { useCompletionListener } from "./agentation-hook";
 
-export default function Page() {
+export default function MyPage() {
+  // Changing this key forces <Agentation> to remount → re-read localStorage
   const [remountKey, setRemountKey] = useState(0);
   const handleResolved = useCallback(() => setRemountKey((k) => k + 1), []);
   useCompletionListener(handleResolved);
 
   return (
     <>
-      {/* Your page content */}
+      {/* Your existing page content — unchanged */}
+      <YourAppContent />
+
+      {/* Add this at the end */}
       <Agentation
         key={`agentation-${remountKey}`}
-        webhookUrl="http://YOUR_SERVER:4848/webhook"
+        webhookUrl="http://localhost:4848/webhook"
         autoSend={true}
       />
     </>
@@ -76,128 +63,142 @@ export default function Page() {
 }
 ```
 
-### Option B: Minimal Integration
+**Key points:**
+- `key={...remountKey}` is required — this is how resolved annotations disappear
+- `webhookUrl` must point to your running webhook receiver
+- `autoSend={true}` sends annotations to the webhook automatically
+- Replace `localhost` with your server's IP if accessing remotely
 
-```tsx
-import { Agentation } from "agentation";
+---
 
-// Just the toolbar — no auto-resolution
-<Agentation
-  webhookUrl="http://YOUR_SERVER:4848/webhook"
-  autoSend={true}
-/>
+### Option B: Plain HTML (no build step)
+
+#### 1. Copy `agentation-vanilla.js` to your project
+
+#### 2. Add one script tag before `</body>`
+
+```html
+<script
+  src="agentation-vanilla.js"
+  data-webhook="http://localhost:4848/webhook"
+></script>
 ```
 
-### Option C: With MCP Server (Full Sync)
+That's it. The script loads React + Agentation from CDN automatically.
+
+#### Configuration via data attributes
+
+| Attribute | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `data-webhook` | Yes | — | Webhook receiver URL |
+| `data-sse` | No | Derived from webhook URL | SSE endpoint for auto-resolution |
+| `data-mcp` | No | — | MCP server URL (optional) |
+| `data-auto-send` | No | `true` | Auto-send annotations |
+
+**Example with all options:**
+```html
+<script
+  src="agentation-vanilla.js"
+  data-webhook="http://192.168.1.50:4848/webhook"
+  data-sse="http://192.168.1.50:4848/events"
+  data-mcp="http://192.168.1.50:4747"
+></script>
+```
+
+---
+
+## Start the Webhook Receiver
+
+The webhook receiver runs alongside your dev server. It receives annotations, batches them, spawns Codex to fix the code, and broadcasts resolution events.
 
 ```bash
-# Start MCP server (optional — enables server-side annotation storage)
-npx agentation serve --port 4747
+# From your project directory:
+node /path/to/webhook-receiver.mjs
 ```
 
-```tsx
-<Agentation
-  key={`agentation-${remountKey}`}
-  webhookUrl="http://YOUR_SERVER:4848/webhook"
-  mcpUrl="http://YOUR_SERVER:4747"
-  autoSend={true}
-/>
+Or with environment variables:
+
+```bash
+AGENTATION_PROJECT_DIR=/path/to/project \
+AGENTATION_PORT=4848 \
+AGENTATION_BATCH_MS=10000 \
+node webhook-receiver.mjs
 ```
 
-## Step 4: Configure the Completion Hook
+| Env Variable | Default | Description |
+|-------------|---------|-------------|
+| `AGENTATION_PROJECT_DIR` | `process.cwd()` | Project root (Codex working directory) |
+| `AGENTATION_PORT` | `4848` | HTTP port for webhook + SSE |
+| `AGENTATION_BATCH_MS` | `10000` | Ms to batch annotations before spawning agent |
 
-Copy `integration/agentation-hook.ts` to your project. Update the SSE URL:
+The receiver auto-detects project type (Next.js, Vite, or static HTML) and adjusts the Codex prompt accordingly.
 
-```typescript
-const SSE_URL = "http://YOUR_SERVER:4848/events";
-```
+### Endpoints
 
-This hook:
-1. Connects to the webhook receiver's SSE endpoint
-2. Listens for `resolved` events (sent when Codex finishes)
-3. Removes resolved annotations from `localStorage`
-4. Calls `onResolved()` to bump the Agentation component's key → forces remount
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/webhook` | Receives annotation events from Agentation |
+| `GET` | `/events` | SSE stream for resolution broadcasts |
+| `POST` | `/test-resolve` | Debug: manually broadcast resolution (`{"ids":["..."]}`) |
 
-## Step 5: Verify the Pipeline
+---
 
-1. Open your app in the browser
-2. Click the Agentation toolbar (bottom-right)
-3. Click on a UI element and add an annotation (e.g., "make this text red")
-4. Wait for the batch window (default 10s)
-5. Watch the terminal — Codex should spawn and make changes
-6. Hot reload shows the fix; annotations should auto-clear
+## How It Works
 
-## Configuration Reference
+### Annotation → Fix → Resolve Flow
 
-### Webhook Receiver (`webhook-receiver.mjs`)
+1. **Human annotates** — Click elements in the browser, add comments describing desired changes
+2. **Webhook receives** — Annotations are POSTed to `/webhook`
+3. **Batch window** — Waits 10s (configurable) to collect multiple annotations into one task
+4. **Agent spawns** — Codex runs in `--full-auto` mode against your project directory
+5. **Code changes** — Agent edits source files based on annotation descriptions
+6. **Hot reload** — Next.js/Vite auto-reload; plain HTML requires manual refresh
+7. **Resolution broadcast** — When agent exits, resolved annotation IDs are sent via SSE
+8. **Annotations clear** — Browser removes resolved annotations from localStorage and remounts the toolbar
 
-| Constant | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `4848` | HTTP port for webhook + SSE |
-| `PROJECT_DIR` | (must set) | Absolute path to your project root |
-| `BATCH_WINDOW_MS` | `10000` | Ms to wait before batching annotations into one agent task |
+### Why the Remount?
 
-### Agentation Component Props
+Agentation stores annotations in `localStorage` (key: `feedback-annotations-{pathname}`). The component reads from localStorage on mount. There is no public API to programmatically remove annotations. The solution:
 
-| Prop | Type | Description |
-|------|------|-------------|
-| `webhookUrl` | `string` | URL of webhook receiver (`http://host:4848/webhook`) |
-| `mcpUrl` | `string?` | Optional MCP server URL for server-side annotation sync |
-| `autoSend` | `boolean` | Auto-send annotations to webhook on creation |
-| `onAnnotationAdd` | `(ann) => void` | Callback when annotation is created |
-| `onAnnotationDelete` | `(ann) => void` | Callback when annotation is manually deleted |
-| `onCopy` | `(output, anns) => void` | Callback when annotations are copied |
+1. SSE event arrives with resolved IDs
+2. JavaScript removes those IDs from localStorage
+3. The React `key` prop changes, forcing unmount → remount
+4. Component re-reads localStorage on mount → resolved annotations are gone
 
-### SSE Events
-
-The webhook receiver sends Server-Sent Events on `GET /events`:
-
-```
-data: connected                              // Initial connection
-data: {"type":"resolved","ids":["123","456"]} // Annotations resolved by agent
-```
-
-## Networking Notes
-
-- The webhook receiver binds to `0.0.0.0` — accessible from any network interface
-- For remote access (e.g., Tailscale), use the machine's IP in `webhookUrl` and `SSE_URL`
-- CORS is set to `*` by default — restrict in production
-- If running behind a reverse proxy, ensure SSE connections are not buffered
+---
 
 ## Customizing the Agent
 
-The default agent is Codex in `--full-auto` mode. To use a different agent, edit the `spawnCodingAgent()` function in `webhook-receiver.mjs`.
+Edit `spawnCodingAgent()` in `webhook-receiver.mjs` to use a different agent:
 
-### Using Claude Code instead:
-
+### Claude Code
 ```javascript
 const agent = spawn("claude", ["-p", prompt, "--allowedTools", "Edit,Write,Read"], {
-  cwd: PROJECT_DIR,
-  stdio: "pipe",
+  cwd: PROJECT_DIR, stdio: "pipe",
 });
 ```
 
-### Using OpenClaw sub-agents:
+### Custom prompt
+Modify the `prompt` template string in `spawnCodingAgent()`. The `feedbackBlock` variable contains the formatted annotation data.
 
-Replace `spawnCodingAgent()` with a call to `openclaw` CLI or the OpenClaw sessions API.
+---
 
 ## Troubleshooting
 
-### Annotations not clearing after agent finishes
+| Problem | Check |
+|---------|-------|
+| Annotations don't clear | Is the webhook receiver running the latest code? It doesn't hot-reload — restart after edits. |
+| SSE not connecting | `curl -N http://localhost:4848/events` should show `data: connected` |
+| Agent not spawning | Check `codex --version` and `OPENAI_API_KEY`. Check `feedback.jsonl` in project dir. |
+| Wrong files edited | Check `last-agent-prompt.md` in project dir to see what the agent received. |
+| "Not found" on /events | Old webhook receiver process running. Kill and restart. |
 
-1. **Check webhook receiver is running the latest code** — it doesn't hot-reload. Restart after edits.
-2. **Check SSE connectivity**: `curl -N http://localhost:4848/events` should show `data: connected`
-3. **Check browser console** for `[Agentation] Resolved IDs received:` logs
-4. **Check webhook receiver logs** for `Broadcasting resolution for N annotation(s)`
+### Debug: Test Resolution Manually
 
-### Agent not spawning
+```bash
+curl -X POST http://localhost:4848/test-resolve \
+  -H "Content-Type: application/json" \
+  -d '{"ids":["ANNOTATION_ID_HERE"]}'
+```
 
-1. Verify Codex is installed: `codex --version`
-2. Check `OPENAI_API_KEY` is set in the webhook receiver's environment
-3. Check `feedback.jsonl` in the project dir for received annotations
-
-### SSE connection drops
-
-- EventSource auto-reconnects by default
-- Check for reverse proxy/firewall killing long-lived connections
-- The hook logs `[Agentation] SSE connection error, will retry...` on errors
+Check browser console for `[Agentation] Resolved IDs received:` log.

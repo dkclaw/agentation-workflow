@@ -2,9 +2,10 @@ import http from "node:http";
 import { execSync, spawn } from "node:child_process";
 import fs from "node:fs";
 
-const PORT = 4848;
-const PROJECT_DIR = "/tmp/demos-test";
-const BATCH_WINDOW_MS = 10_000; // Wait 10s to batch annotations
+// ---- CONFIGURE THESE ----
+const PORT = process.env.AGENTATION_PORT || 4848;
+const PROJECT_DIR = process.env.AGENTATION_PROJECT_DIR || process.cwd();
+const BATCH_WINDOW_MS = parseInt(process.env.AGENTATION_BATCH_MS || "10000"); // Wait 10s to batch annotations
 
 let pendingAnnotations = [];
 let batchTimer = null;
