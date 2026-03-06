@@ -323,6 +323,11 @@
     }
   }
 
+  function isFloopOwnedElement(el) {
+    if (!(el instanceof Element)) return false;
+    return !!el.closest("#agentation-agent-selector, #agentation-status, #agentation-vanilla-root, [data-agentation-react-grab='1']");
+  }
+
   function tryRegisterReactGrabPlugin() {
     if (reactGrabPluginRegistered) return true;
     const api = window.__REACT_GRAB__;
@@ -333,8 +338,12 @@
     api.registerPlugin({
       name: "agentation-webhook-bridge",
       hooks: {
-        onCopySuccess: (_elements, content) => {
+        onCopySuccess: (elements, content) => {
           if (!(activeInspector === "react-grab" || activeInspector === "both")) return;
+          if (Array.isArray(elements) && elements.some((el) => isFloopOwnedElement(el))) {
+            console.log("[Floop] Ignoring React Grab copy from Floop/Agentation UI element");
+            return;
+          }
           sendReactGrabCopyToWebhook(content || "");
         },
       },
