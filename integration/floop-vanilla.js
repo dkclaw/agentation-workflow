@@ -445,6 +445,27 @@
   let selectorEl = null;
   let currentAgent = "codex";
   let currentModel = "";
+  let healthEl = null;
+  let healthDotEl = null;
+  let healthTextEl = null;
+  let healthCheckTimer = null;
+
+  function setHealthIndicator(ok, detail) {
+    if (!healthEl || !healthDotEl || !healthTextEl) return;
+    healthDotEl.style.background = ok ? "#16a34a" : "#dc2626";
+    healthTextEl.textContent = ok ? "Webhook: connected" : "Webhook: disconnected";
+    healthEl.title = detail || (ok ? "Webhook and SSE look reachable" : "Cannot reach webhook receiver");
+  }
+
+  async function checkReceiverHealth() {
+    if (!agentApiUrl) return;
+    try {
+      const res = await fetch(agentApiUrl, { method: "GET", cache: "no-store" });
+      setHealthIndicator(!!res.ok, `GET ${agentApiUrl} → ${res.status}`);
+    } catch (err) {
+      setHealthIndicator(false, `GET ${agentApiUrl} failed: ${err?.message || "unknown error"}`);
+    }
+  }
 
   function createAgentSelector() {
     console.log("[Agentation] Creating agent selector, agentApiUrl:", agentApiUrl);
@@ -771,6 +792,15 @@
     commitBtn.addEventListener("click", openCommitDialog);
     revertBtn.addEventListener("click", openRewindDialog);
 
+    healthEl = document.createElement("span");
+    healthEl.style.cssText = "display:inline-flex;align-items:center;gap:6px;margin-left:8px;padding:2px 8px;border-radius:999px;border:1px solid #d1d5db;font-size:11px;";
+    healthDotEl = document.createElement("span");
+    healthDotEl.style.cssText = "width:8px;height:8px;border-radius:50%;background:#9ca3af;display:inline-block;";
+    healthTextEl = document.createElement("span");
+    healthTextEl.textContent = "Webhook: checking…";
+    healthEl.appendChild(healthDotEl);
+    healthEl.appendChild(healthTextEl);
+
     selectorEl.appendChild(label);
     selectorEl.appendChild(select);
     selectorEl.appendChild(modelLabel);
@@ -779,6 +809,7 @@
     selectorEl.appendChild(inspectorSelect);
     selectorEl.appendChild(commitBtn);
     selectorEl.appendChild(revertBtn);
+    selectorEl.appendChild(healthEl);
     document.body.appendChild(selectorEl);
 
     function applySelectorTheme() {
@@ -791,6 +822,11 @@
       inspectorLabel.style.color = dark ? "#d1d5db" : "#666";
 
       const controls = [select, modelSelect, inspectorSelect, commitBtn, revertBtn];
+      if (healthEl) {
+        healthEl.style.background = dark ? "#111827" : "#fff";
+        healthEl.style.border = dark ? "1px solid #374151" : "1px solid #d1d5db";
+        healthEl.style.color = dark ? "#e5e7eb" : "#374151";
+      }
       controls.forEach((el) => {
         el.style.background = dark ? "#1f2937" : "#fff";
         el.style.color = dark ? "#e5e7eb" : (el === commitBtn ? "#1d4ed8" : el === revertBtn ? "#b91c1c" : "#333");
@@ -852,6 +888,12 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agent: currentAgent, model: currentModel }),
       }).catch(() => {});
+
+      if (healthCheckTimer) clearInterval(healthCheckTimer);
+      checkReceiverHealth();
+      healthCheckTimer = setInterval(checkReceiverHealth, 15000);
+    } else {
+      setHealthIndicator(false, "No agent API URL configured");
     }
   }
 
@@ -859,7 +901,10 @@
     if (!sseUrl) return;
     const es = new EventSource(sseUrl);
     es.onmessage = (event) => {
-      if (event.data === "connected") return;
+      if (event.data === "connected") {
+        setHealthIndicator(true, `SSE connected: ${sseUrl}`);
+        return;
+      }
       try {
         const data = JSON.parse(event.data);
 
@@ -918,6 +963,7 @@
       } catch {}
     };
     es.onerror = () => {
+      setHealthIndicator(false, `SSE error: ${sseUrl}`);
       console.warn("[Agentation] SSE connection error, will retry...");
     };
   }
