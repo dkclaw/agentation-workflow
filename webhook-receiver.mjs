@@ -589,12 +589,31 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  function getProtectedAgentationPaths() {
+    try {
+      const out = execSync("git ls-files", { cwd: PROJECT_DIR, stdio: "pipe" }).toString();
+      return out
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .filter((p) => /(^|\/)agentation-vanilla\.js$/.test(p) || /(^|\/)integration\/agentation-.*\.(ts|tsx|js)$/.test(p));
+    } catch {
+      return [];
+    }
+  }
+
+  function preservePathsFromHead(paths = []) {
+    if (!paths.length) return;
+    const pathArgs = paths.map((p) => JSON.stringify(p)).join(" ");
+    execSync(`git restore --source=HEAD -- ${pathArgs}`, { cwd: PROJECT_DIR, stdio: "pipe" });
+  }
+
   if (req.url === "/git/revert" && req.method === "POST") {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
       try {
-        const { commit, push } = JSON.parse(body || "{}");
+        const { commit, push, preserveAgentation = true } = JSON.parse(body || "{}");
         if (!commit || !String(commit).trim()) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "commit is required" }));
@@ -609,7 +628,24 @@ const server = http.createServer(async (req, res) => {
         }
 
         const target = String(commit).trim();
-        execSync(`git revert --no-edit ${JSON.stringify(target)}`, { cwd: PROJECT_DIR, stdio: "pipe" });
+        const subject = execSync(`git show -s --format=%s ${JSON.stringify(target)}`, { cwd: PROJECT_DIR, stdio: "pipe" }).toString().trim();
+
+        execSync(`git revert --no-commit ${JSON.stringify(target)}`, { cwd: PROJECT_DIR, stdio: "pipe" });
+
+        if (preserveAgentation) {
+          preservePathsFromHead(getProtectedAgentationPaths());
+        }
+
+        execSync("git add -A", { cwd: PROJECT_DIR, stdio: "pipe" });
+        const post = execSync("git status --porcelain", { cwd: PROJECT_DIR }).toString().trim();
+        if (!post) {
+          execSync("git revert --abort", { cwd: PROJECT_DIR, stdio: "pipe" });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true, skipped: true, detail: "Nothing to revert after preservation filters" }));
+          return;
+        }
+
+        execSync(`git commit -m ${JSON.stringify(`revert: ${subject}`)}`, { cwd: PROJECT_DIR, stdio: "pipe" });
 
         let pushed = false;
         if (push) {
@@ -620,9 +656,65 @@ const server = http.createServer(async (req, res) => {
         const detail = pushed ? `Reverted ${target} and pushed` : `Reverted ${target}`;
         broadcast({ type: "git-result", status: "success", detail });
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, reverted: target, pushed }));
+        res.end(JSON.stringify({ ok: true, reverted: target, pushed, preserveAgentation: !!preserveAgentation }));
       } catch (err) {
+        try { execSync("git revert --abort", { cwd: PROJECT_DIR, stdio: "pipe" }); } catch {}
         broadcast({ type: "git-result", status: "error", detail: `Revert failed: ${err.message}` });
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (req.url === "/git/restore-snapshot" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      try {
+        const { commit, push, preserveAgentation = true } = JSON.parse(body || "{}");
+        if (!commit || !String(commit).trim()) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "commit is required" }));
+          return;
+        }
+
+        const dirty = execSync("git status --porcelain", { cwd: PROJECT_DIR }).toString().trim();
+        if (dirty) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Working tree is not clean. Commit/stash changes before restore." }));
+          return;
+        }
+
+        const target = String(commit).trim();
+        execSync(`git restore --source=${JSON.stringify(target)} -- .`, { cwd: PROJECT_DIR, stdio: "pipe" });
+
+        if (preserveAgentation) {
+          preservePathsFromHead(getProtectedAgentationPaths());
+        }
+
+        execSync("git add -A", { cwd: PROJECT_DIR, stdio: "pipe" });
+        const post = execSync("git status --porcelain", { cwd: PROJECT_DIR }).toString().trim();
+        if (!post) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true, skipped: true, detail: "Already matches target snapshot (after preservation filters)" }));
+          return;
+        }
+
+        execSync(`git commit -m ${JSON.stringify(`restore: snapshot from ${target.slice(0, 8)}`)}`, { cwd: PROJECT_DIR, stdio: "pipe" });
+
+        let pushed = false;
+        if (push) {
+          execSync("git push", { cwd: PROJECT_DIR, stdio: "pipe" });
+          pushed = true;
+        }
+
+        const detail = pushed ? `Restored snapshot ${target} and pushed` : `Restored snapshot ${target}`;
+        broadcast({ type: "git-result", status: "success", detail });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, restored: target, pushed, preserveAgentation: !!preserveAgentation }));
+      } catch (err) {
+        broadcast({ type: "git-result", status: "error", detail: `Restore failed: ${err.message}` });
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: err.message }));
       }

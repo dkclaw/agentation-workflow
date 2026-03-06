@@ -290,7 +290,7 @@
     commitBtn.style.cssText = "border:1px solid #3b82f6;border-radius:4px;padding:3px 8px;font-size:12px;background:#eff6ff;cursor:pointer;color:#1d4ed8;font-weight:600;";
 
     const revertBtn = document.createElement("button");
-    revertBtn.textContent = "Revert…";
+    revertBtn.textContent = "Rewind…";
     revertBtn.style.cssText = "border:1px solid #ef4444;border-radius:4px;padding:3px 8px;font-size:12px;background:#fff1f2;cursor:pointer;color:#b91c1c;font-weight:600;";
 
     async function postGit(path, payload) {
@@ -365,7 +365,7 @@
       setTimeout(() => input.focus(), 0);
     }
 
-    async function openRevertDialog() {
+    async function openRewindDialog() {
       const overlay = document.createElement("div");
       overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:2147483646;display:flex;align-items:center;justify-content:center;";
       const box = document.createElement("div");
@@ -373,10 +373,18 @@
       box.style.cssText = "position:relative;width:560px;max-width:94vw;background:white;border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;overflow:hidden;box-sizing:border-box;";
       box.innerHTML = `
         <button id="rv-close" aria-label="Close" style="position:absolute;top:10px;right:10px;border:1px solid #e5e7eb;border-radius:999px;width:26px;height:26px;line-height:22px;background:white;cursor:pointer;font-size:16px;color:#666;">×</button>
-        <div style="font-weight:700;font-size:15px;margin-bottom:10px;">Revert Commit</div>
-        <div style="font-size:12px;color:#666;margin-bottom:8px;">Select one of the 10 most recent commits to revert</div>
+        <div style="font-weight:700;font-size:15px;margin-bottom:8px;">Rewind History</div>
+        <div style="font-size:12px;color:#666;margin-bottom:8px;">Choose a target commit, then pick action:</div>
+        <div style="font-size:12px;color:#374151;margin-bottom:6px;">• <b>Restore</b>: make files match that commit as a new commit (safe snapshot restore)</div>
+        <div style="font-size:12px;color:#374151;margin-bottom:10px;">• <b>Revert</b>: inverse only the selected commit</div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#374151;margin-bottom:10px;">
+          <input id="rv-preserve" type="checkbox" checked />
+          Preserve Agentation integration files
+        </label>
         <div id="rv-list" style="max-height:280px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:12px;padding:4px;"></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <button id="rv-restore" style="border:1px solid #2563eb;border-radius:8px;padding:8px 10px;background:#eff6ff;color:#1d4ed8;font-weight:600;cursor:pointer;">Restore</button>
+          <button id="rv-restore-push" style="border:1px solid #1d4ed8;border-radius:8px;padding:8px 10px;background:#dbeafe;color:#1e3a8a;font-weight:700;cursor:pointer;">Restore+Push</button>
           <button id="rv-revert" style="border:1px solid #ef4444;border-radius:8px;padding:8px 10px;background:#fff1f2;color:#b91c1c;font-weight:600;cursor:pointer;">Revert</button>
           <button id="rv-revert-push" style="border:1px solid #dc2626;border-radius:8px;padding:8px 10px;background:#fee2e2;color:#7f1d1d;font-weight:700;cursor:pointer;">Revert+Push</button>
         </div>
@@ -419,27 +427,36 @@
         box.querySelector("#rv-list").innerHTML = `<div style="padding:12px;font-size:12px;color:#b91c1c;">Failed to load commits: ${err.message || 'unknown error'}</div>`;
       }
 
-      async function run(push) {
+      async function run(action, push) {
         if (!selected) {
-          window.alert("Select a commit to revert.");
+          window.alert("Select a commit first.");
           return;
         }
-        if (!window.confirm(`Revert commit ${selected.slice(0,8)}?`)) return;
+        const preserve = !!box.querySelector("#rv-preserve")?.checked;
+        const verb = action === "restore" ? "Restore snapshot" : "Revert commit";
+        if (!window.confirm(`${verb} ${selected.slice(0, 8)}?`)) return;
         try {
-          await postGit(`${baseUrl}/git/revert`, { commit: selected, push });
-          window.alert(push ? "Reverted and pushed ✅" : "Reverted ✅");
+          if (action === "restore") {
+            await postGit(`${baseUrl}/git/restore-snapshot`, { commit: selected, push, preserveAgentation: preserve });
+            window.alert(push ? "Restored and pushed ✅" : "Restored ✅");
+          } else {
+            await postGit(`${baseUrl}/git/revert`, { commit: selected, push, preserveAgentation: preserve });
+            window.alert(push ? "Reverted and pushed ✅" : "Reverted ✅");
+          }
           close();
         } catch (err) {
-          window.alert(`Revert failed: ${err.message || "unknown error"}`);
+          window.alert(`${action === "restore" ? "Restore" : "Revert"} failed: ${err.message || "unknown error"}`);
         }
       }
 
-      box.querySelector("#rv-revert").addEventListener("click", () => run(false));
-      box.querySelector("#rv-revert-push").addEventListener("click", () => run(true));
+      box.querySelector("#rv-restore").addEventListener("click", () => run("restore", false));
+      box.querySelector("#rv-restore-push").addEventListener("click", () => run("restore", true));
+      box.querySelector("#rv-revert").addEventListener("click", () => run("revert", false));
+      box.querySelector("#rv-revert-push").addEventListener("click", () => run("revert", true));
     }
 
     commitBtn.addEventListener("click", openCommitDialog);
-    revertBtn.addEventListener("click", openRevertDialog);
+    revertBtn.addEventListener("click", openRewindDialog);
 
     selectorEl.appendChild(label);
     selectorEl.appendChild(select);
