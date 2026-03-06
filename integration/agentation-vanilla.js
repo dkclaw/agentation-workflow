@@ -253,6 +253,61 @@
     }
   }
 
+  // Bridge React Grab copy events into annotation webhook events
+  let reactGrabCopyBridgeAttached = false;
+  let lastReactGrabCopy = { text: "", ts: 0 };
+
+  async function sendReactGrabCopyToWebhook(copiedText) {
+    if (!webhookUrl) return;
+    const text = String(copiedText || "").trim();
+    if (!text) return;
+
+    const now = Date.now();
+    if (text === lastReactGrabCopy.text && now - lastReactGrabCopy.ts < 1500) return;
+    lastReactGrabCopy = { text, ts: now };
+
+    const annotation = {
+      id: now + Math.floor(Math.random() * 1000),
+      comment: text.slice(0, 1200),
+      selectedText: text.slice(0, 4000),
+      element: "react-grab-selection",
+      elementPath: "react-grab",
+      cssClasses: [],
+      computedStyles: {},
+    };
+
+    try {
+      await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "annotation.add",
+          annotation,
+          url: window.location.href,
+          source: "react-grab",
+        }),
+      });
+      console.log("[Agentation] React Grab copy sent to webhook");
+    } catch (err) {
+      console.warn("[Agentation] Failed to send React Grab copy to webhook:", err);
+    }
+  }
+
+  function ensureReactGrabCopyBridge() {
+    if (reactGrabCopyBridgeAttached) return;
+    reactGrabCopyBridgeAttached = true;
+
+    document.addEventListener("copy", () => {
+      if (!(activeInspector === "react-grab" || activeInspector === "both")) return;
+
+      const selected = (window.getSelection && window.getSelection()?.toString()) || "";
+      const text = selected.trim();
+      if (!text) return;
+
+      sendReactGrabCopyToWebhook(text);
+    }, true);
+  }
+
   // --- SSE Listener for auto-resolution ---
   let remountCounter = 0;
   let renderFn = null;
@@ -861,6 +916,7 @@
       // Start SSE listener + agent selector
       connectSSE();
       createAgentSelector();
+      ensureReactGrabCopyBridge();
       applyInspectorMode();
       setInterval(applyInspectorMode, 800);
 

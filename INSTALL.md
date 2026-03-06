@@ -124,7 +124,7 @@ That's it. The script loads React + Agentation from CDN automatically.
 | `data-auto-send` | No | `true` | Auto-send annotations |
 | `data-auto-reload` | No | `false` | Auto-reload page after resolved annotations (plain HTML helper) |
 | `data-auto-reload-delay` | No | `1200` | Delay (ms) before auto-reload |
-| `data-inspector` | No | `agentation` | Inspector tool mode: `agentation`, `react-grab`, or `both` |
+| `data-inspector` | No | `agentation` | Inspector tool mode: `agentation`, `react-grab`, or `both` (in `react-grab`/`both`, copied text is bridged to webhook as synthetic `annotation.add`) |
 
 **Example with all options:**
 ```html
