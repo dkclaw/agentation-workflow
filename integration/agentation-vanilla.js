@@ -166,42 +166,85 @@
     });
 
     const commitBtn = document.createElement("button");
-    commitBtn.textContent = "Commit";
-    commitBtn.style.cssText = "border:1px solid #d0d0d0;border-radius:4px;padding:3px 8px;font-size:12px;background:white;cursor:pointer;color:#333;";
+    commitBtn.textContent = "Save…";
+    commitBtn.style.cssText = "border:1px solid #3b82f6;border-radius:4px;padding:3px 8px;font-size:12px;background:#eff6ff;cursor:pointer;color:#1d4ed8;font-weight:600;";
 
-    const pushBtn = document.createElement("button");
-    pushBtn.textContent = "Commit+Push";
-    pushBtn.style.cssText = "border:1px solid #3b82f6;border-radius:4px;padding:3px 8px;font-size:12px;background:#eff6ff;cursor:pointer;color:#1d4ed8;font-weight:600;";
-
-    async function runGitAction(push) {
-      const message = window.prompt(push ? "Commit message (then push):" : "Commit message:");
-      if (!message || !message.trim()) return;
-      try {
-        const res = await fetch(gitApiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: message.trim(), push }),
-        });
-        const data = await res.json();
-        if (!res.ok || data.error) {
-          window.alert(`Git action failed: ${data.error || res.statusText}`);
-        } else if (data.skipped) {
-          window.alert("No changes to commit.");
-        } else {
-          window.alert(push ? "Committed and pushed ✅" : "Committed ✅");
-        }
-      } catch (err) {
-        window.alert(`Git action failed: ${err.message || "unknown error"}`);
-      }
+    async function postGit(path, payload) {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || res.statusText);
+      return data;
     }
 
-    commitBtn.addEventListener("click", () => runGitAction(false));
-    pushBtn.addEventListener("click", () => runGitAction(true));
+    function openCommitDialog() {
+      const overlay = document.createElement("div");
+      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:2147483646;display:flex;align-items:center;justify-content:center;";
+
+      const box = document.createElement("div");
+      box.style.cssText = "width:420px;max-width:92vw;background:white;border-radius:10px;padding:14px;box-shadow:0 8px 30px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;";
+      box.innerHTML = `
+        <div style="font-weight:700;font-size:14px;margin-bottom:8px;">Save Changes</div>
+        <div style="font-size:12px;color:#666;margin-bottom:6px;">Commit message</div>
+        <input id="agentation-commit-msg" type="text" placeholder="feat: update hero styles" style="width:100%;border:1px solid #d0d0d0;border-radius:6px;padding:8px;font-size:13px;margin-bottom:10px;" />
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button id="ac-manual" style="border:1px solid #d0d0d0;border-radius:6px;padding:6px 10px;background:white;cursor:pointer;">Commit</button>
+          <button id="ac-manual-push" style="border:1px solid #3b82f6;border-radius:6px;padding:6px 10px;background:#eff6ff;color:#1d4ed8;font-weight:600;cursor:pointer;">Commit+Push</button>
+          <button id="ac-agent" style="border:1px solid #10b981;border-radius:6px;padding:6px 10px;background:#ecfdf5;color:#047857;font-weight:600;cursor:pointer;">Agent Commit</button>
+          <button id="ac-agent-push" style="border:1px solid #059669;border-radius:6px;padding:6px 10px;background:#d1fae5;color:#065f46;font-weight:700;cursor:pointer;">Agent Commit+Push</button>
+          <button id="ac-cancel" style="margin-left:auto;border:1px solid #ddd;border-radius:6px;padding:6px 10px;background:#fafafa;cursor:pointer;">Cancel</button>
+        </div>
+      `;
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      const input = box.querySelector("#agentation-commit-msg");
+      const close = () => overlay.remove();
+
+      const run = async (mode) => {
+        try {
+          let data;
+          if (mode === "agent") {
+            data = await postGit(`${baseUrl}/git/auto-commit`, { push: false });
+          } else if (mode === "agent-push") {
+            data = await postGit(`${baseUrl}/git/auto-commit`, { push: true });
+          } else {
+            const message = (input.value || "").trim();
+            if (!message) {
+              window.alert("Commit message required for manual commit.");
+              return;
+            }
+            data = await postGit(gitApiUrl, { message, push: mode === "manual-push" });
+          }
+          if (data.skipped) {
+            window.alert("No changes to commit.");
+          } else {
+            window.alert(data.message ? `Saved: ${data.message}` : "Saved ✅");
+          }
+          close();
+        } catch (err) {
+          window.alert(`Git action failed: ${err.message || "unknown error"}`);
+        }
+      };
+
+      box.querySelector("#ac-manual").addEventListener("click", () => run("manual"));
+      box.querySelector("#ac-manual-push").addEventListener("click", () => run("manual-push"));
+      box.querySelector("#ac-agent").addEventListener("click", () => run("agent"));
+      box.querySelector("#ac-agent-push").addEventListener("click", () => run("agent-push"));
+      box.querySelector("#ac-cancel").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+      setTimeout(() => input.focus(), 0);
+    }
+
+    commitBtn.addEventListener("click", openCommitDialog);
 
     selectorEl.appendChild(label);
     selectorEl.appendChild(select);
     selectorEl.appendChild(commitBtn);
-    selectorEl.appendChild(pushBtn);
     document.body.appendChild(selectorEl);
 
     // Load saved preference

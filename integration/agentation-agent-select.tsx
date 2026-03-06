@@ -19,9 +19,12 @@ export function AgentSelect({
     if (typeof window === "undefined") return "codex";
     return localStorage.getItem(STORAGE_KEY) || "codex";
   });
+  const [showModal, setShowModal] = useState(false);
+  const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
   const gitUrl = useMemo(() => apiUrl.replace(/\/agent$/, "/git/commit"), [apiUrl]);
+  const gitAutoUrl = useMemo(() => apiUrl.replace(/\/agent$/, "/git/auto-commit"), [apiUrl]);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -63,24 +66,39 @@ export function AgentSelect({
     }
   };
 
-  const runGitAction = async (push: boolean) => {
-    const message = window.prompt(push ? "Commit message (then push):" : "Commit message:");
-    if (!message || !message.trim()) return;
+  const postGit = async (url: string, payload: any) => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || res.statusText);
+    return data;
+  };
+
+  const runGitAction = async (mode: "manual" | "manual-push" | "agent" | "agent-push") => {
     setBusy(true);
     try {
-      const res = await fetch(gitUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: message.trim(), push }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        window.alert(`Git action failed: ${data.error || res.statusText}`);
-      } else if (data.skipped) {
+      let data: any;
+      if (mode === "agent") {
+        data = await postGit(gitAutoUrl, { push: false });
+      } else if (mode === "agent-push") {
+        data = await postGit(gitAutoUrl, { push: true });
+      } else {
+        if (!message.trim()) {
+          window.alert("Commit message required for manual commit.");
+          return;
+        }
+        data = await postGit(gitUrl, { message: message.trim(), push: mode === "manual-push" });
+      }
+      if (data.skipped) {
         window.alert("No changes to commit.");
       } else {
-        window.alert(push ? "Committed and pushed ✅" : "Committed ✅");
+        window.alert(data.message ? `Saved: ${data.message}` : "Saved ✅");
       }
+      setShowModal(false);
+      setMessage("");
     } catch (err: any) {
       window.alert(`Git action failed: ${err?.message || "unknown error"}`);
     } finally {
@@ -91,78 +109,115 @@ export function AgentSelect({
   const posStyle = position === "bottom-left" ? { left: "20px" } : { right: "20px" };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        bottom: "70px",
-        ...posStyle,
-        zIndex: 999998,
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        fontSize: "12px",
-        display: "flex",
-        alignItems: "center",
-        gap: "6px",
-        background: "white",
-        padding: "6px 10px",
-        borderRadius: "8px",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-        border: "1px solid #e0e0e0",
-      }}
-    >
-      <span style={{ color: "#666", fontWeight: 500 }}>Agent:</span>
-      <select
-        value={agent}
-        onChange={(e) => handleChange(e.target.value)}
+    <>
+      <div
         style={{
-          border: "1px solid #d0d0d0",
-          borderRadius: "4px",
-          padding: "3px 6px",
+          position: "fixed",
+          bottom: "70px",
+          ...posStyle,
+          zIndex: 999998,
+          fontFamily: "system-ui, -apple-system, sans-serif",
           fontSize: "12px",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
           background: "white",
-          cursor: "pointer",
-          outline: "none",
-          color: "#333",
+          padding: "6px 10px",
+          borderRadius: "8px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+          border: "1px solid #e0e0e0",
         }}
       >
-        {AGENTS.map(({ value, label }) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </select>
+        <span style={{ color: "#666", fontWeight: 500 }}>Agent:</span>
+        <select
+          value={agent}
+          onChange={(e) => handleChange(e.target.value)}
+          style={{
+            border: "1px solid #d0d0d0",
+            borderRadius: "4px",
+            padding: "3px 6px",
+            fontSize: "12px",
+            background: "white",
+            cursor: "pointer",
+            outline: "none",
+            color: "#333",
+          }}
+        >
+          {AGENTS.map(({ value, label }) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
 
-      <button
-        onClick={() => runGitAction(false)}
-        disabled={busy}
-        style={{
-          border: "1px solid #d0d0d0",
-          borderRadius: "4px",
-          padding: "3px 8px",
-          fontSize: "12px",
-          background: busy ? "#f5f5f5" : "white",
-          cursor: busy ? "not-allowed" : "pointer",
-          color: "#333",
-        }}
-      >
-        Commit
-      </button>
+        <button
+          onClick={() => setShowModal(true)}
+          style={{
+            border: "1px solid #3b82f6",
+            borderRadius: "4px",
+            padding: "3px 8px",
+            fontSize: "12px",
+            background: "#eff6ff",
+            cursor: "pointer",
+            color: "#1d4ed8",
+            fontWeight: 600,
+          }}
+        >
+          Save…
+        </button>
+      </div>
 
-      <button
-        onClick={() => runGitAction(true)}
-        disabled={busy}
-        style={{
-          border: "1px solid #3b82f6",
-          borderRadius: "4px",
-          padding: "3px 8px",
-          fontSize: "12px",
-          background: busy ? "#dbeafe" : "#eff6ff",
-          cursor: busy ? "not-allowed" : "pointer",
-          color: "#1d4ed8",
-          fontWeight: 600,
-        }}
-      >
-        Commit+Push
-      </button>
-    </div>
+      {showModal && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowModal(false);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+            zIndex: 2147483646,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: "system-ui, -apple-system, sans-serif",
+          }}
+        >
+          <div
+            style={{
+              width: "420px",
+              maxWidth: "92vw",
+              background: "white",
+              borderRadius: "10px",
+              padding: "14px",
+              boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: "14px", marginBottom: "8px" }}>Save Changes</div>
+            <div style={{ fontSize: "12px", color: "#666", marginBottom: "6px" }}>Commit message</div>
+            <input
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="feat: update hero styles"
+              style={{
+                width: "100%",
+                border: "1px solid #d0d0d0",
+                borderRadius: "6px",
+                padding: "8px",
+                fontSize: "13px",
+                marginBottom: "10px",
+              }}
+            />
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              <button disabled={busy} onClick={() => runGitAction("manual")} style={{ border: "1px solid #d0d0d0", borderRadius: "6px", padding: "6px 10px", background: "white" }}>Commit</button>
+              <button disabled={busy} onClick={() => runGitAction("manual-push")} style={{ border: "1px solid #3b82f6", borderRadius: "6px", padding: "6px 10px", background: "#eff6ff", color: "#1d4ed8", fontWeight: 600 }}>Commit+Push</button>
+              <button disabled={busy} onClick={() => runGitAction("agent")} style={{ border: "1px solid #10b981", borderRadius: "6px", padding: "6px 10px", background: "#ecfdf5", color: "#047857", fontWeight: 600 }}>Agent Commit</button>
+              <button disabled={busy} onClick={() => runGitAction("agent-push")} style={{ border: "1px solid #059669", borderRadius: "6px", padding: "6px 10px", background: "#d1fae5", color: "#065f46", fontWeight: 700 }}>Agent Commit+Push</button>
+              <button disabled={busy} onClick={() => setShowModal(false)} style={{ marginLeft: "auto", border: "1px solid #ddd", borderRadius: "6px", padding: "6px 10px", background: "#fafafa" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

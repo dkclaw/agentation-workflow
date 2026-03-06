@@ -219,7 +219,8 @@ The receiver auto-detects project type (Next.js, Vite, or static HTML) and adjus
 | `GET` | `/agent` | Get currently selected agent |
 | `POST` | `/agent` | Set selected agent |
 | `GET` | `/git/status` | Git branch + dirty state |
-| `POST` | `/git/commit` | Commit changes (optionally push) |
+| `POST` | `/git/commit` | Commit changes with provided message (optionally push) |
+| `POST` | `/git/auto-commit` | Agent-generated commit message + commit (optionally push) |
 | `POST` | `/test-resolve` | Debug: manually broadcast resolution (`{"ids":["..."]}`) |
 
 ---

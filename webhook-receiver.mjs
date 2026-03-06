@@ -36,6 +36,37 @@ function makeSessionKey(url, agent) {
   return `${agent}::${page}`;
 }
 
+function sanitizeCommitMessage(msg) {
+  return String(msg || "")
+    .replace(/[`\n\r]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+function generateCommitMessageWithAgent(agentName) {
+  const files = execSync("git diff --cached --name-only", { cwd: PROJECT_DIR }).toString().trim();
+  const stat = execSync("git diff --cached --stat", { cwd: PROJECT_DIR }).toString().trim();
+  const prompt = `Generate ONE git commit message in conventional commit style for these staged changes.\n\nFiles:\n${files || "(none)"}\n\nStat:\n${stat || "(none)"}\n\nRules:\n- Output ONLY the commit message\n- Max 72 characters\n- No markdown, no quotes`;
+
+  try {
+    if (agentName === "claude") {
+      const out = execSync(`claude -p ${JSON.stringify(prompt)}`, { cwd: PROJECT_DIR, timeout: 90000 });
+      return sanitizeCommitMessage(out.toString().split("\n")[0]);
+    }
+    if (agentName === "openclaw") {
+      const out = execSync(`openclaw agent --message ${JSON.stringify(prompt)} --no-interactive`, { cwd: PROJECT_DIR, timeout: 90000 });
+      return sanitizeCommitMessage(out.toString().split("\n")[0]);
+    }
+    // default: codex
+    const out = execSync(`codex --full-auto exec ${JSON.stringify(prompt)}`, { cwd: PROJECT_DIR, timeout: 90000 });
+    return sanitizeCommitMessage(out.toString().split("\n")[0]);
+  } catch {
+    const fallback = execSync("git diff --cached --name-only | head -1", { cwd: PROJECT_DIR }).toString().trim();
+    return sanitizeCommitMessage(`chore: update ${fallback || "project files"}`);
+  }
+}
+
 function formatSessionContext(entries = []) {
   if (!entries.length) return "(no prior annotation history)";
   return entries
@@ -317,17 +348,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.url === "/git/commit" && req.method === "POST") {
+  if ((req.url === "/git/commit" || req.url === "/git/auto-commit") && req.method === "POST") {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
       try {
         const { message, push } = JSON.parse(body || "{}");
-        if (!message || !String(message).trim()) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "commit message is required" }));
-          return;
-        }
+        const isAuto = req.url === "/git/auto-commit";
 
         const status = execSync("git status --porcelain", { cwd: PROJECT_DIR }).toString().trim();
         if (!status) {
@@ -337,7 +364,18 @@ const server = http.createServer(async (req, res) => {
         }
 
         execSync("git add -A", { cwd: PROJECT_DIR, stdio: "pipe" });
-        execSync(`git commit -m ${JSON.stringify(String(message).trim())}`, { cwd: PROJECT_DIR, stdio: "pipe" });
+
+        let commitMessage = String(message || "").trim();
+        if (isAuto) {
+          commitMessage = generateCommitMessageWithAgent(selectedAgent) || "chore: update project files";
+        }
+        if (!commitMessage) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "commit message is required" }));
+          return;
+        }
+
+        execSync(`git commit -m ${JSON.stringify(commitMessage)}`, { cwd: PROJECT_DIR, stdio: "pipe" });
 
         let pushed = false;
         if (push) {
@@ -345,10 +383,13 @@ const server = http.createServer(async (req, res) => {
           pushed = true;
         }
 
-        broadcast({ type: "git-result", status: "success", detail: pushed ? "Committed and pushed" : "Committed" });
+        const detail = isAuto
+          ? `${pushed ? "Agent committed + pushed" : "Agent committed"}: ${commitMessage}`
+          : `${pushed ? "Committed + pushed" : "Committed"}: ${commitMessage}`;
+        broadcast({ type: "git-result", status: "success", detail });
 
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, pushed }));
+        res.end(JSON.stringify({ ok: true, pushed, message: commitMessage, auto: isAuto }));
       } catch (err) {
         broadcast({ type: "git-result", status: "error", detail: `Git action failed: ${err.message}` });
         res.writeHead(400, { "Content-Type": "application/json" });
