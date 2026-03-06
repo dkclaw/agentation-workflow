@@ -22,6 +22,7 @@
  *   data-auto-send — Auto-send annotations (default: true)
  *   data-auto-reload — Auto-reload page after resolved annotations (default: false)
  *   data-auto-reload-delay — Delay before reload in ms (default: 1200)
+ *   data-inspector — "agentation" | "react-grab" | "both" (default: "agentation")
  */
 (function () {
   "use strict";
@@ -33,6 +34,7 @@
   const autoSend = scriptTag?.getAttribute("data-auto-send") !== "false";
   const autoReload = scriptTag?.getAttribute("data-auto-reload") === "true";
   const autoReloadDelayMs = Math.max(0, parseInt(scriptTag?.getAttribute("data-auto-reload-delay") || "1200", 10) || 1200);
+  const inspectorModeAttr = (scriptTag?.getAttribute("data-inspector") || "agentation").toLowerCase();
 
   // Derive URLs from webhook URL if not explicitly set
   const baseUrl = webhookUrl.replace(/\/webhook$/, "");
@@ -207,6 +209,50 @@
     };
   }
 
+  // --- Inspector mode support (Agentation / React Grab / Both) ---
+  const INSPECTOR_KEY = "agentation-inspector-mode";
+  let activeInspector = ["agentation", "react-grab", "both"].includes(inspectorModeAttr)
+    ? inspectorModeAttr
+    : "agentation";
+  try {
+    const stored = localStorage.getItem(INSPECTOR_KEY);
+    if (["agentation", "react-grab", "both"].includes(stored || "")) activeInspector = stored;
+  } catch {}
+
+  function ensureReactGrabLoaded() {
+    if (window.__REACT_GRAB__) return;
+    if (document.querySelector('script[data-agentation-react-grab="1"]')) return;
+    const s = document.createElement("script");
+    s.src = "https://unpkg.com/react-grab/dist/index.global.js";
+    s.crossOrigin = "anonymous";
+    s.defer = true;
+    s.setAttribute("data-agentation-react-grab", "1");
+    document.head.appendChild(s);
+  }
+
+  function setAgentationUiVisible(visible) {
+    try {
+      const buttons = collectButtonsDeep(document);
+      const rootBtn = buttons.find((b) => /\/agentation/i.test((b.textContent || "").trim()));
+      if (!rootBtn) return;
+      const container = rootBtn.closest("[style]") || rootBtn.parentElement;
+      if (container) container.style.display = visible ? "" : "none";
+    } catch {}
+  }
+
+  function applyInspectorMode() {
+    const mode = activeInspector;
+    if (mode === "react-grab") {
+      ensureReactGrabLoaded();
+      setAgentationUiVisible(false);
+    } else if (mode === "both") {
+      ensureReactGrabLoaded();
+      setAgentationUiVisible(true);
+    } else {
+      setAgentationUiVisible(true);
+    }
+  }
+
   // --- SSE Listener for auto-resolution ---
   let remountCounter = 0;
   let renderFn = null;
@@ -316,6 +362,25 @@
     modelSelect.id = "agentation-model-select";
     modelSelect.style.cssText = "border:1px solid #d0d0d0;border-radius:4px;padding:3px 6px;font-size:12px;background:white;cursor:pointer;outline:none;color:#333;max-width:220px;";
 
+    const inspectorLabel = document.createElement("span");
+    inspectorLabel.textContent = "Tool:";
+    inspectorLabel.style.cssText = "color:#666;font-weight:500;";
+
+    const inspectorSelect = document.createElement("select");
+    inspectorSelect.id = "agentation-inspector-select";
+    inspectorSelect.style.cssText = "border:1px solid #d0d0d0;border-radius:4px;padding:3px 6px;font-size:12px;background:white;cursor:pointer;outline:none;color:#333;max-width:140px;";
+    [
+      { value: "agentation", label: "Agentation" },
+      { value: "react-grab", label: "React Grab" },
+      { value: "both", label: "Both" },
+    ].forEach((item) => {
+      const opt = document.createElement("option");
+      opt.value = item.value;
+      opt.textContent = item.label;
+      inspectorSelect.appendChild(opt);
+    });
+    inspectorSelect.value = activeInspector;
+
     const agents = [
       { value: "codex", label: "⚡ Codex", assumeInstalled: true },
       { value: "claude", label: "✴️ Claude", assumeInstalled: true },
@@ -417,6 +482,12 @@
       } catch (err) {
         console.warn("[Agentation] Failed to update model on server:", err);
       }
+    });
+
+    inspectorSelect.addEventListener("change", () => {
+      activeInspector = inspectorSelect.value;
+      try { localStorage.setItem(INSPECTOR_KEY, activeInspector); } catch {}
+      applyInspectorMode();
     });
 
 
@@ -598,6 +669,8 @@
     selectorEl.appendChild(select);
     selectorEl.appendChild(modelLabel);
     selectorEl.appendChild(modelSelect);
+    selectorEl.appendChild(inspectorLabel);
+    selectorEl.appendChild(inspectorSelect);
     selectorEl.appendChild(commitBtn);
     selectorEl.appendChild(revertBtn);
     document.body.appendChild(selectorEl);
@@ -609,8 +682,9 @@
       selectorEl.style.boxShadow = dark ? "0 2px 12px rgba(0,0,0,0.5)" : "0 2px 12px rgba(0,0,0,0.18)";
       label.style.color = dark ? "#d1d5db" : "#666";
       modelLabel.style.color = dark ? "#d1d5db" : "#666";
+      inspectorLabel.style.color = dark ? "#d1d5db" : "#666";
 
-      const controls = [select, modelSelect, commitBtn, revertBtn];
+      const controls = [select, modelSelect, inspectorSelect, commitBtn, revertBtn];
       controls.forEach((el) => {
         el.style.background = dark ? "#1f2937" : "#fff";
         el.style.color = dark ? "#e5e7eb" : (el === commitBtn ? "#1d4ed8" : el === revertBtn ? "#b91c1c" : "#333");
@@ -787,6 +861,8 @@
       // Start SSE listener + agent selector
       connectSSE();
       createAgentSelector();
+      applyInspectorMode();
+      setInterval(applyInspectorMode, 800);
 
       console.log("[Agentation] Vanilla loader initialized", {
         webhook: webhookUrl,
@@ -829,6 +905,8 @@
         renderFn(remountCounter);
         connectSSE();
         createAgentSelector();
+        applyInspectorMode();
+        setInterval(applyInspectorMode, 800);
       } catch (err2) {
         console.error("[Agentation] All CDNs failed:", err2);
       }
