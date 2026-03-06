@@ -1,0 +1,5 @@
+node_modules/
+.next/
+feedback.jsonl
+last-agent-prompt.md
+*.log
