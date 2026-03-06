@@ -197,6 +197,21 @@ function discoverOpenCodeModels() {
   }
 }
 
+function discoverOpenClawModels() {
+  if (!isCommandAvailable("openclaw")) return [];
+  try {
+    const out = execSync("openclaw models list --json", { cwd: PROJECT_DIR, stdio: "pipe", timeout: 20000 }).toString();
+    const parsed = JSON.parse(out);
+    const models = Array.isArray(parsed?.models) ? parsed.models : [];
+    const keys = models
+      .map((m) => (typeof m?.key === "string" ? m.key.trim() : ""))
+      .filter(Boolean);
+    return Array.from(new Set(keys)).slice(0, 200);
+  } catch {
+    return [];
+  }
+}
+
 function getModelsForAgent(agent) {
   const now = Date.now();
   const cached = modelCache.get(agent);
@@ -215,6 +230,20 @@ function getModelsForAgent(agent) {
 
   if (agent === "opencode") {
     discovered = discoverOpenCodeModels();
+    source = discovered.length ? "dynamic" : "dynamic-unavailable";
+    const models = mergeUniqueModels([""], discovered);
+    modelCache.set(agent, { models, source, _fetchedAtMs: now });
+    return {
+      agent,
+      models,
+      source,
+      supportsCustom: true,
+      fetchedAt: new Date(now).toISOString(),
+    };
+  }
+
+  if (agent === "openclaw") {
+    discovered = discoverOpenClawModels();
     source = discovered.length ? "dynamic" : "dynamic-unavailable";
     const models = mergeUniqueModels([""], discovered);
     modelCache.set(agent, { models, source, _fetchedAtMs: now });
