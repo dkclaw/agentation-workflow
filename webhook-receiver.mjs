@@ -32,7 +32,28 @@ async function resolveAnnotations(annotations) {
   broadcastResolved(annotations);
 }
 
-function spawnCodingAgent(annotations) {
+// ---- AGENT BACKENDS ----
+const DEFAULT_AGENT = process.env.AGENTATION_AGENT || "codex";
+
+function getAgentCommand(agentName, prompt) {
+  switch (agentName) {
+    case "codex":
+      return { bin: "codex", args: ["--full-auto", "exec", prompt], label: "Codex" };
+    case "claude":
+      return { bin: "claude", args: ["-p", prompt, "--allowedTools", "Edit,Write,Read,Bash"], label: "Claude Code" };
+    case "openclaw":
+      return {
+        bin: "openclaw",
+        args: ["agent", "--message", prompt, "--no-interactive"],
+        label: "OpenClaw",
+      };
+    default:
+      return { bin: agentName, args: [prompt], label: agentName };
+  }
+}
+
+function spawnCodingAgent(annotations, agentName) {
+  agentName = agentName || DEFAULT_AGENT;
   const feedbackBlock = annotations
     .map((a, i) => {
       return `### Annotation ${i + 1}
@@ -84,41 +105,46 @@ ${feedbackBlock}
 ${projectType.instructions}`;
 
   const annotationIds = annotations.map((a) => a.id?.toString()).filter(Boolean);
+  const cmd = getAgentCommand(agentName, prompt);
 
-  console.log(`\n[${new Date().toISOString()}] Spawning Codex agent for ${annotations.length} annotation(s)...`);
+  console.log(`\n[${new Date().toISOString()}] Spawning ${cmd.label} agent for ${annotations.length} annotation(s)...`);
 
   // Log the prompt for debugging
   fs.writeFileSync(`${PROJECT_DIR}/last-agent-prompt.md`, prompt);
 
   // Notify browser: agent is working
-  broadcastStatus("processing", annotationIds, `Agent spawning for ${annotations.length} annotation(s)`);
+  broadcastStatus("processing", annotationIds, `${cmd.label} working on ${annotations.length} annotation(s)...`);
 
-  const agent = spawn("codex", ["--full-auto", "exec", prompt], {
+  const agent = spawn(cmd.bin, cmd.args, {
     cwd: PROJECT_DIR,
     stdio: "pipe",
     env: { ...process.env, PATH: process.env.PATH },
   });
 
   // Log agent stdout/stderr
-  agent.stdout?.on("data", (d) => process.stdout.write(`[codex] ${d}`));
-  agent.stderr?.on("data", (d) => process.stderr.write(`[codex:err] ${d}`));
+  const tag = cmd.label.toLowerCase().replace(/\s+/g, "-");
+  agent.stdout?.on("data", (d) => process.stdout.write(`[${tag}] ${d}`));
+  agent.stderr?.on("data", (d) => process.stderr.write(`[${tag}:err] ${d}`));
 
   agent.on("error", (err) => {
-    console.error(`Agent spawn error: ${err.message}`);
-    broadcastStatus("error", annotationIds, `Agent failed to spawn: ${err.message}`);
+    console.error(`${cmd.label} spawn error: ${err.message}`);
+    broadcastStatus("error", annotationIds, `${cmd.label} failed to spawn: ${err.message}. Is '${cmd.bin}' installed and on PATH?`);
   });
 
   agent.on("exit", (code) => {
-    console.log(`\n[${new Date().toISOString()}] Codex agent exited with code ${code}`);
+    console.log(`\n[${new Date().toISOString()}] ${cmd.label} agent exited with code ${code}`);
     console.log(`  Broadcasting resolution for ${annotations.length} annotation(s) to ${sseClients.size} SSE client(s)...`);
     resolveAnnotations(annotations);
   });
 }
 
+let selectedAgent = DEFAULT_AGENT;
+
 function flushBatch() {
   if (pendingAnnotations.length === 0) return;
 
   const batch = [...pendingAnnotations];
+  const agentForBatch = selectedAgent;
   pendingAnnotations = [];
   batchTimer = null;
 
@@ -126,11 +152,11 @@ function flushBatch() {
   for (const a of batch) {
     fs.appendFileSync(
       `${PROJECT_DIR}/feedback.jsonl`,
-      JSON.stringify({ ...a, timestamp: new Date().toISOString() }) + "\n"
+      JSON.stringify({ ...a, agent: agentForBatch, timestamp: new Date().toISOString() }) + "\n"
     );
   }
 
-  spawnCodingAgent(batch);
+  spawnCodingAgent(batch, agentForBatch);
 }
 
 // SSE clients waiting for completion events
@@ -158,6 +184,40 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200);
     res.end();
     return;
+  }
+
+  // Agent selection endpoint
+  // GET /agent — returns current agent and available agents
+  // POST /agent — set agent: {"agent":"codex"|"claude"|"openclaw"}
+  if (req.url === "/agent") {
+    if (req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        current: selectedAgent,
+        available: ["codex", "claude", "openclaw"],
+      }));
+      return;
+    }
+    if (req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk) => (body += chunk));
+      req.on("end", () => {
+        try {
+          const { agent } = JSON.parse(body);
+          if (agent) {
+            selectedAgent = agent;
+            console.log(`[CONFIG] Agent changed to: ${agent}`);
+            broadcast({ type: "agent-changed", agent: selectedAgent });
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ current: selectedAgent }));
+        } catch (err) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
   }
 
   // Test endpoint: manually broadcast a resolution for given IDs
@@ -189,9 +249,14 @@ const server = http.createServer(async (req, res) => {
     req.on("end", async () => {
       try {
         const payload = JSON.parse(body);
-        const { event, annotation, url } = payload;
+        const { event, annotation, url, agent: payloadAgent } = payload;
 
-        console.log(`[${new Date().toISOString()}] Event: ${event}`);
+        // Allow webhook payload to override agent selection
+        if (payloadAgent && ["codex", "claude", "openclaw"].includes(payloadAgent)) {
+          selectedAgent = payloadAgent;
+        }
+
+        console.log(`[${new Date().toISOString()}] Event: ${event} (agent: ${selectedAgent})`);
 
         if (event === "annotation.add" && annotation) {
           console.log(`  → ${annotation.comment} (${annotation.element})`);

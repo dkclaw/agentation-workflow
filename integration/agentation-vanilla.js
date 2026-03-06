@@ -30,10 +30,10 @@
   const mcpUrl = scriptTag?.getAttribute("data-mcp") || "";
   const autoSend = scriptTag?.getAttribute("data-auto-send") !== "false";
 
-  // Derive SSE URL from webhook URL if not explicitly set
-  const sseUrl =
-    scriptTag?.getAttribute("data-sse") ||
-    (webhookUrl ? webhookUrl.replace(/\/webhook$/, "/events") : "");
+  // Derive URLs from webhook URL if not explicitly set
+  const baseUrl = webhookUrl.replace(/\/webhook$/, "");
+  const sseUrl = scriptTag?.getAttribute("data-sse") || (baseUrl ? `${baseUrl}/events` : "");
+  const agentApiUrl = baseUrl ? `${baseUrl}/agent` : "";
 
   if (!webhookUrl) {
     console.error(
@@ -117,6 +117,80 @@
     }, delayMs);
   }
 
+  // --- Agent selector dropdown ---
+  let selectorEl = null;
+  let currentAgent = "codex";
+
+  function createAgentSelector() {
+    selectorEl = document.createElement("div");
+    selectorEl.id = "agentation-agent-selector";
+    selectorEl.style.cssText = "position:fixed;bottom:70px;left:20px;z-index:999998;font-family:system-ui,-apple-system,sans-serif;font-size:12px;display:flex;align-items:center;gap:6px;background:white;padding:6px 10px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.12);border:1px solid #e0e0e0;";
+
+    const label = document.createElement("span");
+    label.textContent = "Agent:";
+    label.style.cssText = "color:#666;font-weight:500;";
+
+    const select = document.createElement("select");
+    select.id = "agentation-agent-select";
+    select.style.cssText = "border:1px solid #d0d0d0;border-radius:4px;padding:3px 6px;font-size:12px;background:white;cursor:pointer;outline:none;color:#333;";
+
+    const agents = [
+      { value: "codex", label: "⚡ Codex" },
+      { value: "claude", label: "🟣 Claude" },
+      { value: "openclaw", label: "🐾 OpenClaw" },
+    ];
+
+    agents.forEach(({ value, label: text }) => {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = text;
+      if (value === currentAgent) opt.selected = true;
+      select.appendChild(opt);
+    });
+
+    select.addEventListener("change", async () => {
+      currentAgent = select.value;
+      localStorage.setItem("agentation-selected-agent", currentAgent);
+      try {
+        await fetch(agentApiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agent: currentAgent }),
+        });
+        console.log(`[Agentation] Agent changed to: ${currentAgent}`);
+      } catch (err) {
+        console.warn("[Agentation] Failed to update agent on server:", err);
+      }
+    });
+
+    selectorEl.appendChild(label);
+    selectorEl.appendChild(select);
+    document.body.appendChild(selectorEl);
+
+    // Load saved preference
+    const saved = localStorage.getItem("agentation-selected-agent");
+    if (saved && agents.some((a) => a.value === saved)) {
+      currentAgent = saved;
+      select.value = saved;
+      // Sync to server
+      fetch(agentApiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent: currentAgent }),
+      }).catch(() => {});
+    }
+
+    // Fetch current server setting
+    if (agentApiUrl) {
+      fetch(agentApiUrl).then((r) => r.json()).then((data) => {
+        if (data.current && !saved) {
+          currentAgent = data.current;
+          select.value = data.current;
+        }
+      }).catch(() => {});
+    }
+  }
+
   function connectSSE() {
     if (!sseUrl) return;
     const es = new EventSource(sseUrl);
@@ -124,6 +198,13 @@
       if (event.data === "connected") return;
       try {
         const data = JSON.parse(event.data);
+
+        // Sync agent selector if server changed
+        if (data.type === "agent-changed" && data.agent) {
+          currentAgent = data.agent;
+          const sel = document.getElementById("agentation-agent-select");
+          if (sel) sel.value = data.agent;
+        }
 
         // Show status indicator
         if (data.type === "queued") {
@@ -195,13 +276,15 @@
       // Initial render
       renderFn(remountCounter);
 
-      // Start SSE listener
+      // Start SSE listener + agent selector
       connectSSE();
+      createAgentSelector();
 
       console.log("[Agentation] Vanilla loader initialized", {
         webhook: webhookUrl,
         sse: sseUrl,
         mcp: mcpUrl || "(none)",
+        agent: currentAgent,
       });
     } catch (err) {
       console.error("[Agentation] Failed to load:", err);

@@ -1,19 +1,19 @@
 "use client";
 
 /**
- * Example Next.js page with Agentation integration + status indicator.
+ * Example Next.js page with Agentation integration.
  *
- * Shows the minimal wiring needed:
- *   1. Import Agentation + AgentationStatus
- *   2. Use a remountKey to force Agentation to re-read localStorage on resolution
- *   3. Render both components (dev-only)
- *
- * Replace localhost:4848 with your webhook receiver's host/port.
+ * Includes:
+ *   - Agentation toolbar (annotation tool)
+ *   - AgentationStatus (processing indicator)
+ *   - AgentSelect (choose Codex / Claude / OpenClaw)
+ *   - All wrapped in dev-only guard
  */
 
 import { useState, useCallback } from "react";
 import { Agentation } from "agentation";
 import { AgentationStatus } from "./agentation-status";
+import { AgentSelect } from "./agentation-agent-select";
 
 export default function Page() {
   const isDev = process.env.NODE_ENV !== "production";
@@ -28,9 +28,10 @@ export default function Page() {
         <p>This is your normal page content.</p>
       </main>
 
-      {/* ---- Agentation toolbar + status (dev only) ---- */}
+      {/* ---- Agentation toolbar + status + agent selector (dev only) ---- */}
       {isDev && (
         <>
+          <AgentSelect />
           <AgentationStatus
             sseUrl="http://localhost:4848/events"
             onResolved={handleResolved}
