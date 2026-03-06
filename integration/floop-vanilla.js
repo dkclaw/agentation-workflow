@@ -234,55 +234,70 @@
     document.head.appendChild(s);
   }
 
-  function setAgentationUiVisible(visible) {
-    try {
-      const mount = document.getElementById("agentation-vanilla-root");
-      if (mount) {
-        mount.style.display = visible ? "" : "none";
-        if (visible) {
-          mount.style.bottom = "112px";
-          mount.style.right = "20px";
-        }
-      }
+  let lastAppliedInspector = null;
 
-      // Backward-compatible fallback for older DOM structures
+  function hideLegacyAgentationContainer() {
+    try {
       const buttons = collectButtonsDeep(document);
       const rootBtn = buttons.find((b) => /\/agentation/i.test((b.textContent || "").trim()));
       if (!rootBtn) return;
       const container = rootBtn.closest("[style]") || rootBtn.parentElement;
-      if (!container) return;
-
-      container.style.display = visible ? "" : "none";
-      if (visible) {
-        container.style.bottom = "112px";
-        container.style.right = "20px";
+      if (container) {
+        container.style.display = "none";
+        container.style.pointerEvents = "none";
       }
     } catch {}
   }
 
-  function setAgentationInteractionEnabled(enabled) {
-    try {
-      const root = document.getElementById("agentation-vanilla-root");
-      if (root) root.style.pointerEvents = enabled ? "" : "none";
-    } catch {}
+  function setAgentationMounted(enabled) {
+    const mount = document.getElementById("agentation-vanilla-root");
+    if (!mount) return;
+
+    if (enabled) {
+      mount.style.display = "";
+      mount.style.pointerEvents = "";
+      mount.style.bottom = "112px";
+      mount.style.right = "20px";
+      mount.removeAttribute("aria-hidden");
+      mount.removeAttribute("inert");
+      if (renderFn && mount.dataset.agentationMounted !== "1") {
+        renderFn(remountCounter);
+        mount.dataset.agentationMounted = "1";
+      }
+      return;
+    }
+
+    if (renderFn && mount.dataset.agentationMounted === "1") {
+      renderFn(null);
+      mount.dataset.agentationMounted = "0";
+    }
+    mount.style.display = "none";
+    mount.style.pointerEvents = "none";
+    mount.setAttribute("aria-hidden", "true");
+    mount.setAttribute("inert", "");
+    hideLegacyAgentationContainer();
   }
 
-  function applyInspectorMode() {
+  function applyInspectorMode(force) {
     const mode = activeInspector;
+    if (!force && mode === lastAppliedInspector) return;
+    lastAppliedInspector = mode;
+
     if (mode === "react-grab") {
       ensureReactGrabLoaded();
       ensureReactGrabCopyBridge();
-      setAgentationUiVisible(false);
-      setAgentationInteractionEnabled(false);
-    } else if (mode === "both") {
+      setAgentationMounted(false);
+      return;
+    }
+
+    if (mode === "both") {
       ensureReactGrabLoaded();
       ensureReactGrabCopyBridge();
-      setAgentationUiVisible(true);
-      setAgentationInteractionEnabled(true);
-    } else {
-      setAgentationUiVisible(true);
-      setAgentationInteractionEnabled(true);
+      setAgentationMounted(true);
+      return;
     }
+
+    setAgentationMounted(true);
   }
 
   // Bridge React Grab copy-success events into annotation webhook events
@@ -1023,8 +1038,12 @@
 
       const root = ReactDOM.createRoot(mountDiv);
 
-      // Render function that accepts remount key
+      // Render function that accepts remount key. null = unmount agentation overlay.
       renderFn = (key) => {
+        if (key === null) {
+          root.render(null);
+          return;
+        }
         const props = {
           key: "agentation-" + key,
           webhookUrl: webhookUrl,
@@ -1035,15 +1054,13 @@
         root.render(React.createElement(Agentation, props));
       };
 
-      // Initial render
-      renderFn(remountCounter);
+      mountDiv.dataset.agentationMounted = "0";
 
       // Start SSE listener + agent selector
       connectSSE();
       createAgentSelector();
       ensureReactGrabCopyBridge();
-      applyInspectorMode();
-      setInterval(applyInspectorMode, 800);
+      applyInspectorMode(true);
 
       console.log("[Agentation] Vanilla loader initialized", {
         webhook: webhookUrl,
@@ -1075,6 +1092,10 @@
         const root = ReactDOM.createRoot(mountDiv);
 
         renderFn = (key) => {
+          if (key === null) {
+            root.render(null);
+            return;
+          }
           const props = {
             key: "agentation-" + key,
             webhookUrl,
@@ -1083,11 +1104,10 @@
           if (mcpUrl) props.mcpUrl = mcpUrl;
           root.render(React.createElement(Agentation, props));
         };
-        renderFn(remountCounter);
+        mountDiv.dataset.agentationMounted = "0";
         connectSSE();
         createAgentSelector();
-        applyInspectorMode();
-        setInterval(applyInspectorMode, 800);
+        applyInspectorMode(true);
       } catch (err2) {
         console.error("[Agentation] All CDNs failed:", err2);
       }
