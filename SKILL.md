@@ -101,6 +101,8 @@ The vanilla panel now supports `data-inspector` with `agentation`, `react-grab`,
 
 For HTML-heavy presentation pages, the webhook receiver also attempts likely source line references (`file#Lline`) from annotation context to make edits more targeted.
 
+The receiver also exposes `/health`, `/openapi.json`, and `/webhooks` (outbound signed events) for automation pipelines and external orchestration.
+
 **Important:** Remove this `<script>` tag before deploying to production. See [INSTALL.md]({baseDir}/INSTALL.md) for strategies (git-ignore, CI strip, server-side conditional).
 
 ## How It Works

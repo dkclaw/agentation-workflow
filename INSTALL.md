@@ -241,6 +241,8 @@ The receiver auto-detects project type (Next.js, Vite, or static HTML) and adjus
 2. **Webhook receives** — Annotations are POSTed to `/webhook`
 3. **Batch window** — Waits 10s (configurable) to collect multiple annotations into one task
 4. **Agent spawns** — Codex runs in `--full-auto` mode against your project directory (for static HTML pages, the receiver also computes likely `file#Lline` references when possible)
+5. **Optional API + webhooks** — receiver now exposes `/health`, `/openapi.json`, and `/webhooks` for outbound event subscriptions (signed with HMAC)
+6. **Hot reload** — Next.js/Vite auto-reload; plain HTML can use `data-auto-reload="true"` (or refresh manually)
 5. **Code changes** — Agent edits source files based on annotation descriptions
 6. **Hot reload** — Next.js/Vite auto-reload; plain HTML can use `data-auto-reload="true"` (or refresh manually)
 7. **Resolution broadcast** — When agent exits, resolved annotation IDs are sent via SSE

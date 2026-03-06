@@ -46,7 +46,7 @@ cd /your/project && node /path/to/webhook-receiver.mjs
 
 | File | Purpose |
 |------|---------|
-| `webhook-receiver.mjs` | Receives annotations, batches, keeps per-page session context, adds likely HTML file/line refs, spawns selected agent, handles git commit/push actions, broadcasts status + resolution via SSE |
+| `webhook-receiver.mjs` | Receives annotations, batches, keeps per-page session context, adds likely HTML file/line refs, spawns selected agent, handles git commit/push actions, broadcasts status + resolution via SSE, exposes `/openapi.json`, and can emit signed outbound webhooks |
 | `integration/agentation-status.tsx` | React status indicator component (queued → processing → done/error) |
 | `integration/agentation-agent-select.tsx` | React agent/model selector dropdown (Codex / Claude / OpenClaw / OpenCode / Cursor / Kiro) |
 | `integration/agentation-hook.ts` | React hook for auto-resolution (SSE + localStorage cleanup + remount) |
@@ -60,6 +60,8 @@ cd /your/project && node /path/to/webhook-receiver.mjs
 
 - **Likely line references for HTML pages:** annotation context now includes probable `file#Lline` hints when the receiver can map selected text/classes back to source.
 - **Inspector tool mode switch:** vanilla panel can run `agentation`, `react-grab`, or `both` via `data-inspector` and live Tool dropdown.
+- **Outbound webhook automation:** register signed outbound webhooks for queue/resolution/status/git events.
+- **Machine-readable API contract:** `/openapi.json` describes available endpoints for agent/tool integration.
 
 ## Requirements
 
