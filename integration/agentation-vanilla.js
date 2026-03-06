@@ -311,10 +311,8 @@
     document.addEventListener("copy", () => {
       if (!(activeInspector === "react-grab" || activeInspector === "both")) return;
 
-      if (activeInspector === "both") {
-        const withinWindow = Date.now() - lastReactGrabUiInteractionTs < 2500;
-        if (!withinWindow) return;
-      }
+      const withinWindow = Date.now() - lastReactGrabUiInteractionTs < 2500;
+      if (!withinWindow) return;
 
       const selected = (window.getSelection && window.getSelection()?.toString()) || "";
       const text = selected.trim();
