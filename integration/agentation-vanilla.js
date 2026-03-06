@@ -122,9 +122,10 @@
   let currentAgent = "codex";
 
   function createAgentSelector() {
+    console.log("[Agentation] Creating agent selector, agentApiUrl:", agentApiUrl);
     selectorEl = document.createElement("div");
     selectorEl.id = "agentation-agent-selector";
-    selectorEl.style.cssText = "position:fixed;bottom:70px;left:20px;z-index:999998;font-family:system-ui,-apple-system,sans-serif;font-size:12px;display:flex;align-items:center;gap:6px;background:white;padding:6px 10px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.12);border:1px solid #e0e0e0;";
+    selectorEl.style.cssText = "position:fixed;bottom:16px;left:20px;z-index:2147483647;font-family:system-ui,-apple-system,sans-serif;font-size:13px;display:flex;align-items:center;gap:6px;background:white;padding:8px 12px;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.18);border:1px solid #ccc;";
 
     const label = document.createElement("span");
     label.textContent = "Agent:";
@@ -320,6 +321,7 @@
         };
         renderFn(remountCounter);
         connectSSE();
+        createAgentSelector();
       } catch (err2) {
         console.error("[Agentation] All CDNs failed:", err2);
       }
