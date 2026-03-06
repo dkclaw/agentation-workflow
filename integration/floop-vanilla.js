@@ -236,6 +236,16 @@
 
   function setAgentationUiVisible(visible) {
     try {
+      const mount = document.getElementById("agentation-vanilla-root");
+      if (mount) {
+        mount.style.display = visible ? "" : "none";
+        if (visible) {
+          mount.style.bottom = "112px";
+          mount.style.right = "20px";
+        }
+      }
+
+      // Backward-compatible fallback for older DOM structures
       const buttons = collectButtonsDeep(document);
       const rootBtn = buttons.find((b) => /\/agentation/i.test((b.textContent || "").trim()));
       if (!rootBtn) return;
@@ -244,7 +254,6 @@
 
       container.style.display = visible ? "" : "none";
       if (visible) {
-        // Keep Agentation above common chat bubbles and away from React Grab toolbar defaults.
         container.style.bottom = "112px";
         container.style.right = "20px";
       }
