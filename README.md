@@ -46,7 +46,7 @@ cd /your/project && node /path/to/webhook-receiver.mjs
 
 | File | Purpose |
 |------|---------|
-| `webhook-receiver.mjs` | Receives annotations, batches, spawns Codex, broadcasts status + resolution via SSE |
+| `webhook-receiver.mjs` | Receives annotations, batches, keeps per-page session context, spawns selected agent, handles git commit/push actions, broadcasts status + resolution via SSE |
 | `integration/agentation-status.tsx` | React status indicator component (queued → processing → done/error) |
 | `integration/agentation-agent-select.tsx` | React agent selector dropdown (Codex / Claude / OpenClaw) |
 | `integration/agentation-hook.ts` | React hook for auto-resolution (SSE + localStorage cleanup + remount) |

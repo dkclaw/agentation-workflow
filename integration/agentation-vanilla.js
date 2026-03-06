@@ -34,6 +34,7 @@
   const baseUrl = webhookUrl.replace(/\/webhook$/, "");
   const sseUrl = scriptTag?.getAttribute("data-sse") || (baseUrl ? `${baseUrl}/events` : "");
   const agentApiUrl = baseUrl ? `${baseUrl}/agent` : "";
+  const gitApiUrl = baseUrl ? `${baseUrl}/git/commit` : "";
 
   if (!webhookUrl) {
     console.error(
@@ -164,8 +165,43 @@
       }
     });
 
+    const commitBtn = document.createElement("button");
+    commitBtn.textContent = "Commit";
+    commitBtn.style.cssText = "border:1px solid #d0d0d0;border-radius:4px;padding:3px 8px;font-size:12px;background:white;cursor:pointer;color:#333;";
+
+    const pushBtn = document.createElement("button");
+    pushBtn.textContent = "Commit+Push";
+    pushBtn.style.cssText = "border:1px solid #3b82f6;border-radius:4px;padding:3px 8px;font-size:12px;background:#eff6ff;cursor:pointer;color:#1d4ed8;font-weight:600;";
+
+    async function runGitAction(push) {
+      const message = window.prompt(push ? "Commit message (then push):" : "Commit message:");
+      if (!message || !message.trim()) return;
+      try {
+        const res = await fetch(gitApiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: message.trim(), push }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          window.alert(`Git action failed: ${data.error || res.statusText}`);
+        } else if (data.skipped) {
+          window.alert("No changes to commit.");
+        } else {
+          window.alert(push ? "Committed and pushed ✅" : "Committed ✅");
+        }
+      } catch (err) {
+        window.alert(`Git action failed: ${err.message || "unknown error"}`);
+      }
+    }
+
+    commitBtn.addEventListener("click", () => runGitAction(false));
+    pushBtn.addEventListener("click", () => runGitAction(true));
+
     selectorEl.appendChild(label);
     selectorEl.appendChild(select);
+    selectorEl.appendChild(commitBtn);
+    selectorEl.appendChild(pushBtn);
     document.body.appendChild(selectorEl);
 
     // Load saved preference
@@ -215,6 +251,16 @@
         } else if (data.type === "error") {
           showStatus("error", data.detail || "Agent error");
           hideStatus(15000);
+        }
+
+        if (data.type === "git-result") {
+          if (data.status === "success") {
+            showStatus("resolved", data.detail || "Git action completed");
+            hideStatus(5000);
+          } else {
+            showStatus("error", data.detail || "Git action failed");
+            hideStatus(12000);
+          }
         }
 
         // Handle resolution

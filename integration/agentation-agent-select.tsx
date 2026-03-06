@@ -1,21 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-/**
- * Agent selector dropdown for Agentation workflow.
- *
- * Renders a small floating dropdown that lets users choose which coding agent
- * (Codex, Claude, OpenClaw) handles their annotations.
- *
- * The selection is:
- *   1. Persisted to localStorage
- *   2. Synced to the webhook receiver via POST /agent
- *   3. Updated from the server via SSE agent-changed events
- *
- * Usage:
- *   <AgentSelect apiUrl="http://localhost:4848/agent" sseUrl="http://localhost:4848/events" />
- */
+import { useEffect, useMemo, useState } from "react";
 
 const AGENTS = [
   { value: "codex", label: "⚡ Codex" },
@@ -34,8 +19,10 @@ export function AgentSelect({
     if (typeof window === "undefined") return "codex";
     return localStorage.getItem(STORAGE_KEY) || "codex";
   });
+  const [busy, setBusy] = useState(false);
 
-  // Fetch current server setting on mount
+  const gitUrl = useMemo(() => apiUrl.replace(/\/agent$/, "/git/commit"), [apiUrl]);
+
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (!saved) {
@@ -48,7 +35,6 @@ export function AgentSelect({
     }
   }, [apiUrl]);
 
-  // Listen for server-side agent changes via SSE
   useEffect(() => {
     const es = new EventSource(sseUrl);
     es.onmessage = (event) => {
@@ -74,6 +60,31 @@ export function AgentSelect({
       });
     } catch (err) {
       console.warn("[Agentation] Failed to update agent on server:", err);
+    }
+  };
+
+  const runGitAction = async (push: boolean) => {
+    const message = window.prompt(push ? "Commit message (then push):" : "Commit message:");
+    if (!message || !message.trim()) return;
+    setBusy(true);
+    try {
+      const res = await fetch(gitUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: message.trim(), push }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        window.alert(`Git action failed: ${data.error || res.statusText}`);
+      } else if (data.skipped) {
+        window.alert("No changes to commit.");
+      } else {
+        window.alert(push ? "Committed and pushed ✅" : "Committed ✅");
+      }
+    } catch (err: any) {
+      window.alert(`Git action failed: ${err?.message || "unknown error"}`);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -119,6 +130,39 @@ export function AgentSelect({
           </option>
         ))}
       </select>
+
+      <button
+        onClick={() => runGitAction(false)}
+        disabled={busy}
+        style={{
+          border: "1px solid #d0d0d0",
+          borderRadius: "4px",
+          padding: "3px 8px",
+          fontSize: "12px",
+          background: busy ? "#f5f5f5" : "white",
+          cursor: busy ? "not-allowed" : "pointer",
+          color: "#333",
+        }}
+      >
+        Commit
+      </button>
+
+      <button
+        onClick={() => runGitAction(true)}
+        disabled={busy}
+        style={{
+          border: "1px solid #3b82f6",
+          borderRadius: "4px",
+          padding: "3px 8px",
+          fontSize: "12px",
+          background: busy ? "#dbeafe" : "#eff6ff",
+          cursor: busy ? "not-allowed" : "pointer",
+          color: "#1d4ed8",
+          fontWeight: 600,
+        }}
+      >
+        Commit+Push
+      </button>
     </div>
   );
 }

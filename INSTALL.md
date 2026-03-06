@@ -215,7 +215,11 @@ The receiver auto-detects project type (Next.js, Vite, or static HTML) and adjus
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/webhook` | Receives annotation events from Agentation |
-| `GET` | `/events` | SSE stream for resolution broadcasts |
+| `GET` | `/events` | SSE stream for status/resolution broadcasts |
+| `GET` | `/agent` | Get currently selected agent |
+| `POST` | `/agent` | Set selected agent |
+| `GET` | `/git/status` | Git branch + dirty state |
+| `POST` | `/git/commit` | Commit changes (optionally push) |
 | `POST` | `/test-resolve` | Debug: manually broadcast resolution (`{"ids":["..."]}`) |
 
 ---
@@ -232,6 +236,7 @@ The receiver auto-detects project type (Next.js, Vite, or static HTML) and adjus
 6. **Hot reload** — Next.js/Vite auto-reload; plain HTML requires manual refresh
 7. **Resolution broadcast** — When agent exits, resolved annotation IDs are sent via SSE
 8. **Annotations clear** — Browser removes resolved annotations from localStorage and remounts the toolbar
+9. **Session context is preserved** — Future annotations on the same page/agent include prior batch history, so follow-up requests ("undo previous change") keep context
 
 ### Why the Remount?
 

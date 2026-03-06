@@ -1,5 +1,5 @@
 import http from "node:http";
-import { execSync, spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
 import fs from "node:fs";
 
 // ---- CONFIGURE THESE ----
@@ -9,6 +9,59 @@ const BATCH_WINDOW_MS = parseInt(process.env.AGENTATION_BATCH_MS || "10000");
 
 let pendingAnnotations = [];
 let batchTimer = null;
+
+// Session context persistence (for CLI "resume" behavior)
+const SESSION_STORE_PATH = `${PROJECT_DIR}/.agentation-sessions.json`;
+const MAX_SESSION_ENTRIES = parseInt(process.env.AGENTATION_MAX_SESSION_ENTRIES || "20", 10);
+
+function loadSessionStore() {
+  try {
+    if (!fs.existsSync(SESSION_STORE_PATH)) return {};
+    return JSON.parse(fs.readFileSync(SESSION_STORE_PATH, "utf8")) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSessionStore(store) {
+  try {
+    fs.writeFileSync(SESSION_STORE_PATH, JSON.stringify(store, null, 2));
+  } catch (err) {
+    console.error(`[session] failed to save store: ${err.message}`);
+  }
+}
+
+function makeSessionKey(url, agent) {
+  const page = url || "unknown-page";
+  return `${agent}::${page}`;
+}
+
+function formatSessionContext(entries = []) {
+  if (!entries.length) return "(no prior annotation history)";
+  return entries
+    .slice(-8)
+    .map((e, i) => {
+      const ts = e.time || "unknown-time";
+      const changes = (e.annotations || [])
+        .map((a) => `- ${a.comment} (${a.element || "element"})`)
+        .join("\n");
+      return `### Prior Batch ${i + 1} (${ts})\n${changes || "- no details"}`;
+    })
+    .join("\n\n");
+}
+
+function appendSessionEntry(sessionKey, entry) {
+  const store = loadSessionStore();
+  const arr = Array.isArray(store[sessionKey]) ? store[sessionKey] : [];
+  arr.push(entry);
+  store[sessionKey] = arr.slice(-MAX_SESSION_ENTRIES);
+  saveSessionStore(store);
+}
+
+function getSessionEntries(sessionKey) {
+  const store = loadSessionStore();
+  return Array.isArray(store[sessionKey]) ? store[sessionKey] : [];
+}
 
 function broadcast(eventData) {
   const msg = JSON.stringify(eventData);
@@ -54,6 +107,10 @@ function getAgentCommand(agentName, prompt) {
 
 function spawnCodingAgent(annotations, agentName) {
   agentName = agentName || DEFAULT_AGENT;
+  const pageUrl = annotations[0]?.url || "";
+  const sessionKey = makeSessionKey(pageUrl, agentName);
+  const priorSessionEntries = getSessionEntries(sessionKey);
+
   const feedbackBlock = annotations
     .map((a, i) => {
       return `### Annotation ${i + 1}
@@ -94,13 +151,24 @@ function spawnCodingAgent(annotations, agentName) {
 
 ${projectType.description}
 
-## Feedback to address:
+## Session Context (resume prior intent)
+
+Session key: ${sessionKey}
+Page URL: ${pageUrl || "unknown"}
+
+Recent prior annotation history for this same page/session:
+${formatSessionContext(priorSessionEntries)}
+
+Interpret new annotations as follow-ups to prior changes when relevant (e.g., "add back the box you removed earlier").
+
+## Feedback to address now:
 
 ${feedbackBlock}
 
 ## Instructions:
 - Fix each annotation by editing the relevant files
 - Keep changes minimal and focused on what was requested
+- Preserve context from prior batches in this session
 - Do NOT modify any Agentation/webhook setup code or script tags
 ${projectType.instructions}`;
 
@@ -133,6 +201,18 @@ ${projectType.instructions}`;
 
   agent.on("exit", (code) => {
     console.log(`\n[${new Date().toISOString()}] ${cmd.label} agent exited with code ${code}`);
+
+    appendSessionEntry(sessionKey, {
+      time: new Date().toISOString(),
+      exitCode: code,
+      agent: agentName,
+      annotations: annotations.map((a) => ({
+        id: a.id,
+        comment: a.comment,
+        element: a.element,
+      })),
+    });
+
     console.log(`  Broadcasting resolution for ${annotations.length} annotation(s) to ${sseClients.size} SSE client(s)...`);
     resolveAnnotations(annotations);
   });
@@ -218,6 +298,64 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
+  }
+
+  // Git helper endpoints
+  // GET /git/status
+  // POST /git/commit { message, push?: boolean }
+  if (req.url === "/git/status" && req.method === "GET") {
+    try {
+      const branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd: PROJECT_DIR }).toString().trim();
+      const porcelain = execSync("git status --porcelain", { cwd: PROJECT_DIR }).toString();
+      const clean = porcelain.trim().length === 0;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ branch, clean, changedFiles: porcelain.split("\n").filter(Boolean).length }));
+    } catch (err) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: `git status failed: ${err.message}` }));
+    }
+    return;
+  }
+
+  if (req.url === "/git/commit" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      try {
+        const { message, push } = JSON.parse(body || "{}");
+        if (!message || !String(message).trim()) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "commit message is required" }));
+          return;
+        }
+
+        const status = execSync("git status --porcelain", { cwd: PROJECT_DIR }).toString().trim();
+        if (!status) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true, skipped: true, detail: "No changes to commit" }));
+          return;
+        }
+
+        execSync("git add -A", { cwd: PROJECT_DIR, stdio: "pipe" });
+        execSync(`git commit -m ${JSON.stringify(String(message).trim())}`, { cwd: PROJECT_DIR, stdio: "pipe" });
+
+        let pushed = false;
+        if (push) {
+          execSync("git push", { cwd: PROJECT_DIR, stdio: "pipe" });
+          pushed = true;
+        }
+
+        broadcast({ type: "git-result", status: "success", detail: pushed ? "Committed and pushed" : "Committed" });
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, pushed }));
+      } catch (err) {
+        broadcast({ type: "git-result", status: "error", detail: `Git action failed: ${err.message}` });
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
   }
 
   // Test endpoint: manually broadcast a resolution for given IDs
@@ -347,6 +485,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Agentation webhook receiver listening on http://0.0.0.0:${PORT}/webhook`);
-  console.log(`Batch window: ${BATCH_WINDOW_MS / 1000}s — annotations are collected then sent to Codex`);
-  console.log(`Agent: codex --full-auto (openai-codex/gpt-5.3-codex)`);
+  console.log(`Batch window: ${BATCH_WINDOW_MS / 1000}s — annotations are collected then sent to selected agent`);
+  console.log(`Default agent: ${DEFAULT_AGENT}`);
+  console.log(`Session store: ${SESSION_STORE_PATH}`);
 });
