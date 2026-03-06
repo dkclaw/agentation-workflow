@@ -424,7 +424,7 @@
     if (!statusEl) {
       statusEl = document.createElement("div");
       statusEl.id = "agentation-status";
-      statusEl.style.cssText = "position:fixed;bottom:70px;right:20px;z-index:999998;padding:8px 14px;border-radius:8px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:#333;display:flex;align-items:center;gap:6px;max-width:320px;box-shadow:0 2px 8px rgba(0,0,0,0.15);transition:opacity 0.2s;";
+      statusEl.style.cssText = "position:fixed;bottom:170px;right:20px;z-index:2147483647;padding:8px 14px;border-radius:8px;font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:#333;display:flex;align-items:center;gap:6px;max-width:320px;box-shadow:0 2px 8px rgba(0,0,0,0.15);transition:opacity 0.2s;pointer-events:none;";
       document.body.appendChild(statusEl);
     }
     const cfg = STATUS_CONFIG[type] || STATUS_CONFIG.processing;
