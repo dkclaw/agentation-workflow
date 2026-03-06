@@ -311,14 +311,63 @@ function getAgentCommand(agentName, prompt, model) {
   }
 }
 
+function getLikelyHtmlFileForUrl(pageUrl) {
+  try {
+    const urlPath = pageUrl ? new URL(pageUrl).pathname : "/";
+    return urlPath === "/" ? "index.html" : urlPath.replace(/\/$/, "") + ".html";
+  } catch {
+    return "index.html";
+  }
+}
+
+function findLineNumberInFile(filePath, textNeedle) {
+  try {
+    if (!textNeedle) return null;
+    const content = fs.readFileSync(filePath, "utf8");
+    const lines = content.split(/\r?\n/);
+    const needle = String(textNeedle).trim();
+    if (!needle) return null;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes(needle)) return i + 1;
+    }
+  } catch {}
+  return null;
+}
+
+function resolveHtmlLineRefForAnnotation(annotation, pageUrl) {
+  const htmlFile = getLikelyHtmlFileForUrl(pageUrl);
+  const filePath = `${PROJECT_DIR}/${htmlFile}`;
+  if (!fs.existsSync(filePath)) return { file: htmlFile, line: null };
+
+  // Heuristic priority: selected text -> class token -> elementPath token
+  let line = null;
+  if (annotation?.selectedText) line = findLineNumberInFile(filePath, annotation.selectedText);
+  if (!line && annotation?.cssClasses) {
+    const cls = String(annotation.cssClasses).split(/\s+/).find(Boolean);
+    if (cls) line = findLineNumberInFile(filePath, cls.startsWith(".") ? cls.slice(1) : cls);
+  }
+  if (!line && annotation?.elementPath) {
+    const token = String(annotation.elementPath).split(/\s+|>|\.|#/).find((t) => t && t.length > 2);
+    if (token) line = findLineNumberInFile(filePath, token);
+  }
+
+  return { file: htmlFile, line };
+}
+
 function spawnCodingAgent(annotations, agentName, modelName) {
   agentName = agentName || DEFAULT_AGENT;
   const pageUrl = annotations[0]?.url || "";
   const sessionKey = makeSessionKey(pageUrl, agentName);
   const priorSessionEntries = getSessionEntries(sessionKey);
 
-  const feedbackBlock = annotations
+  const enrichedAnnotations = annotations.map((a) => {
+    const lineRef = resolveHtmlLineRefForAnnotation(a, pageUrl);
+    return { ...a, lineRef };
+  });
+
+  const feedbackBlock = enrichedAnnotations
     .map((a, i) => {
+      const lineRefText = a?.lineRef?.line ? `${a.lineRef.file}#L${a.lineRef.line}` : "n/a";
       return `### Annotation ${i + 1}
 - **Element:** ${a.element}
 - **CSS Path:** ${a.elementPath}
@@ -326,7 +375,8 @@ function spawnCodingAgent(annotations, agentName, modelName) {
 - **Comment:** ${a.comment}
 - **Current Styles:** ${a.computedStyles || "n/a"}
 - **CSS Classes:** ${a.cssClasses || "n/a"}
-- **Selected Text:** ${a.selectedText || "n/a"}`;
+- **Selected Text:** ${a.selectedText || "n/a"}
+- **Likely Source Line:** ${lineRefText}`;
     })
     .join("\n\n");
 
@@ -345,8 +395,7 @@ function spawnCodingAgent(annotations, agentName, modelName) {
       };
     }
     const pageUrl = annotations[0]?.url;
-    const urlPath = pageUrl ? new URL(pageUrl).pathname : "/";
-    const htmlFile = urlPath === "/" ? "index.html" : urlPath.replace(/\/$/, "") + ".html";
+    const htmlFile = getLikelyHtmlFileForUrl(pageUrl);
     return {
       description: `The project is a static HTML site in ${PROJECT_DIR}. The page being annotated is likely at ${htmlFile}. Look at the CSS paths and element selectors to find the right elements to modify.`,
       instructions: `- Edit the HTML/CSS files directly (likely ${htmlFile} or linked stylesheets)\n- The user will refresh the browser to see changes`,
@@ -436,11 +485,12 @@ function flushBatch() {
   pendingAnnotations = [];
   batchTimer = null;
 
-  // Save to JSONL for audit trail
+  // Save to JSONL for audit trail (with likely line refs for HTML pages)
   for (const a of batch) {
+    const lineRef = resolveHtmlLineRefForAnnotation(a, a?.url || "");
     fs.appendFileSync(
       `${PROJECT_DIR}/feedback.jsonl`,
-      JSON.stringify({ ...a, agent: agentForBatch, model: modelForBatch, timestamp: new Date().toISOString() }) + "\n"
+      JSON.stringify({ ...a, lineRef, agent: agentForBatch, model: modelForBatch, timestamp: new Date().toISOString() }) + "\n"
     );
   }
 
