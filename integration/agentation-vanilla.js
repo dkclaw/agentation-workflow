@@ -50,6 +50,22 @@
   const REACT_DOM_CDN = "https://esm.sh/react-dom@19/client?bundle";
   const AGENTATION_CDN = "https://esm.sh/agentation?bundle&external=react,react-dom";
 
+  // Defensive overflow fix for form controls in overlay modals
+  if (!document.getElementById("agentation-overflow-fix")) {
+    const fix = document.createElement("style");
+    fix.id = "agentation-overflow-fix";
+    fix.textContent = `
+      input, textarea, select, button { box-sizing: border-box; }
+      .agentation-modal input,
+      .agentation-modal textarea,
+      .agentation-modal select,
+      .agentation-modal button {
+        max-width: 100%;
+      }
+    `;
+    document.head.appendChild(fix);
+  }
+
   // --- SSE Listener for auto-resolution ---
   let remountCounter = 0;
   let renderFn = null;
@@ -189,12 +205,13 @@
       overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:2147483646;display:flex;align-items:center;justify-content:center;";
 
       const box = document.createElement("div");
-      box.style.cssText = "position:relative;width:440px;max-width:92vw;background:white;border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;";
+      box.className = "agentation-modal";
+      box.style.cssText = "position:relative;width:440px;max-width:92vw;background:white;border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;overflow:hidden;box-sizing:border-box;";
       box.innerHTML = `
         <button id="ac-close" aria-label="Close" style="position:absolute;top:10px;right:10px;border:1px solid #e5e7eb;border-radius:999px;width:26px;height:26px;line-height:22px;background:white;cursor:pointer;font-size:16px;color:#666;">×</button>
         <div style="font-weight:700;font-size:15px;margin-bottom:10px;">Save Changes</div>
         <div style="font-size:12px;color:#666;margin-bottom:6px;">Commit message</div>
-        <input id="agentation-commit-msg" type="text" placeholder="feat: update hero styles" style="width:100%;border:1px solid #d0d0d0;border-radius:8px;padding:9px 10px;font-size:13px;margin-bottom:12px;" />
+        <input id="agentation-commit-msg" type="text" placeholder="feat: update hero styles" style="display:block;width:100%;max-width:100%;box-sizing:border-box;border:1px solid #d0d0d0;border-radius:8px;padding:9px 10px;font-size:13px;margin-bottom:12px;" />
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <button id="ac-manual" style="border:1px solid #d0d0d0;border-radius:8px;padding:8px 10px;background:white;cursor:pointer;font-weight:500;">Commit</button>
           <button id="ac-manual-push" style="border:1px solid #3b82f6;border-radius:8px;padding:8px 10px;background:#eff6ff;color:#1d4ed8;font-weight:600;cursor:pointer;">Commit+Push</button>
@@ -248,7 +265,8 @@
       const overlay = document.createElement("div");
       overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:2147483646;display:flex;align-items:center;justify-content:center;";
       const box = document.createElement("div");
-      box.style.cssText = "position:relative;width:560px;max-width:94vw;background:white;border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;";
+      box.className = "agentation-modal";
+      box.style.cssText = "position:relative;width:560px;max-width:94vw;background:white;border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;overflow:hidden;box-sizing:border-box;";
       box.innerHTML = `
         <button id="rv-close" aria-label="Close" style="position:absolute;top:10px;right:10px;border:1px solid #e5e7eb;border-radius:999px;width:26px;height:26px;line-height:22px;background:white;cursor:pointer;font-size:16px;color:#666;">×</button>
         <div style="font-weight:700;font-size:15px;margin-bottom:10px;">Revert Commit</div>

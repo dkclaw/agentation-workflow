@@ -195,11 +195,11 @@ export function AgentSelect({
 
       {showSaveModal && (
         <div onClick={(e) => e.target === e.currentTarget && setShowSaveModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 2147483646, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui, -apple-system, sans-serif" }}>
-          <div style={{ position: "relative", width: "440px", maxWidth: "92vw", background: "white", borderRadius: "12px", padding: "16px", boxShadow: "0 8px 30px rgba(0,0,0,0.25)" }}>
+          <div style={{ position: "relative", width: "440px", maxWidth: "92vw", background: "white", borderRadius: "12px", padding: "16px", boxShadow: "0 8px 30px rgba(0,0,0,0.25)", overflow: "hidden", boxSizing: "border-box" }}>
             <button onClick={() => setShowSaveModal(false)} aria-label="Close" style={{ position: "absolute", top: "10px", right: "10px", border: "1px solid #e5e7eb", borderRadius: "999px", width: "26px", height: "26px", lineHeight: "22px", background: "white", cursor: "pointer", fontSize: "16px", color: "#666" }}>×</button>
             <div style={{ fontWeight: 700, fontSize: "15px", marginBottom: "10px" }}>Save Changes</div>
             <div style={{ fontSize: "12px", color: "#666", marginBottom: "6px" }}>Commit message</div>
-            <input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="feat: update hero styles" style={{ width: "100%", border: "1px solid #d0d0d0", borderRadius: "8px", padding: "9px 10px", fontSize: "13px", marginBottom: "12px" }} />
+            <input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="feat: update hero styles" style={{ display: "block", width: "100%", maxWidth: "100%", boxSizing: "border-box", border: "1px solid #d0d0d0", borderRadius: "8px", padding: "9px 10px", fontSize: "13px", marginBottom: "12px" }} />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
               <button disabled={busy} onClick={() => runSaveAction("manual")} style={{ border: "1px solid #d0d0d0", borderRadius: "8px", padding: "8px 10px", background: "white", fontWeight: 500 }}>Commit</button>
               <button disabled={busy} onClick={() => runSaveAction("manual-push")} style={{ border: "1px solid #3b82f6", borderRadius: "8px", padding: "8px 10px", background: "#eff6ff", color: "#1d4ed8", fontWeight: 600 }}>Commit+Push</button>
@@ -212,7 +212,7 @@ export function AgentSelect({
 
       {showRevertModal && (
         <div onClick={(e) => e.target === e.currentTarget && setShowRevertModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 2147483646, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui, -apple-system, sans-serif" }}>
-          <div style={{ position: "relative", width: "560px", maxWidth: "94vw", background: "white", borderRadius: "12px", padding: "16px", boxShadow: "0 8px 30px rgba(0,0,0,0.25)" }}>
+          <div style={{ position: "relative", width: "560px", maxWidth: "94vw", background: "white", borderRadius: "12px", padding: "16px", boxShadow: "0 8px 30px rgba(0,0,0,0.25)", overflow: "hidden", boxSizing: "border-box" }}>
             <button onClick={() => setShowRevertModal(false)} aria-label="Close" style={{ position: "absolute", top: "10px", right: "10px", border: "1px solid #e5e7eb", borderRadius: "999px", width: "26px", height: "26px", lineHeight: "22px", background: "white", cursor: "pointer", fontSize: "16px", color: "#666" }}>×</button>
             <div style={{ fontWeight: 700, fontSize: "15px", marginBottom: "10px" }}>Revert Commit</div>
             <div style={{ fontSize: "12px", color: "#666", marginBottom: "8px" }}>Select one of the 10 most recent commits to revert</div>
