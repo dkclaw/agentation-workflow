@@ -1,19 +1,19 @@
 /**
- * Agentation Vanilla Loader
+ * Floop Vanilla Loader
  * 
  * Drop this <script> into ANY HTML page to get the full Agentation toolbar
  * + auto-resolution via SSE. No build step required.
  *
  * Usage:
  *   <script 
- *     src="https://raw.githubusercontent.com/dkclaw/agentation-workflow/master/integration/agentation-vanilla.js"
+ *     src="https://raw.githubusercontent.com/dkclaw/agentation-workflow/master/integration/floop-vanilla.js"
  *     data-webhook="http://YOUR_SERVER:4848/webhook"
  *     data-sse="http://YOUR_SERVER:4848/events"
  *     data-mcp="http://YOUR_SERVER:4747"
  *   ></script>
  *
  * Or simpler (just webhook, no MCP):
- *   <script src="agentation-vanilla.js" data-webhook="http://localhost:4848/webhook"></script>
+ *   <script src="floop-vanilla.js" data-webhook="http://localhost:4848/webhook"></script>
  *
  * Config via data attributes on the script tag:
  *   data-webhook  — Webhook receiver URL (required)
@@ -23,6 +23,8 @@
  *   data-auto-reload — Auto-reload page after resolved annotations (default: false)
  *   data-auto-reload-delay — Delay before reload in ms (default: 1200)
  *   data-inspector — "agentation" | "react-grab" | "both" (default: "agentation")
+ *   data-react-grab-edge — "top" | "bottom" | "left" | "right" (default: "right")
+ *   data-react-grab-ratio — 0..1 position along edge (default: 0.88)
  */
 (function () {
   "use strict";
@@ -35,6 +37,8 @@
   const autoReload = scriptTag?.getAttribute("data-auto-reload") === "true";
   const autoReloadDelayMs = Math.max(0, parseInt(scriptTag?.getAttribute("data-auto-reload-delay") || "1200", 10) || 1200);
   const inspectorModeAttr = (scriptTag?.getAttribute("data-inspector") || "agentation").toLowerCase();
+  const reactGrabEdgeAttr = (scriptTag?.getAttribute("data-react-grab-edge") || "right").toLowerCase();
+  const reactGrabRatio = Math.min(1, Math.max(0, parseFloat(scriptTag?.getAttribute("data-react-grab-ratio") || "0.88") || 0.88));
 
   // Derive URLs from webhook URL if not explicitly set
   const baseUrl = webhookUrl.replace(/\/webhook$/, "");
@@ -46,7 +50,7 @@
   if (!webhookUrl) {
     console.error(
       "[Agentation] No data-webhook attribute set on script tag. Example:\n" +
-        '<script src="agentation-vanilla.js" data-webhook="http://localhost:4848/webhook"></script>'
+        '<script src="floop-vanilla.js" data-webhook="http://localhost:4848/webhook"></script>'
     );
     return;
   }
@@ -295,10 +299,27 @@
     }
   }
 
+  function applyReactGrabToolbarPlacement(api) {
+    if (!api || typeof api.setToolbarState !== "function") return;
+    const edge = ["top", "bottom", "left", "right"].includes(reactGrabEdgeAttr) ? reactGrabEdgeAttr : "right";
+    try {
+      api.setToolbarState({
+        edge,
+        ratio: reactGrabRatio,
+        collapsed: false,
+        enabled: true,
+      });
+    } catch (err) {
+      console.warn("[Floop] Failed to set React Grab toolbar placement:", err);
+    }
+  }
+
   function tryRegisterReactGrabPlugin() {
     if (reactGrabPluginRegistered) return true;
     const api = window.__REACT_GRAB__;
     if (!api || typeof api.registerPlugin !== "function") return false;
+
+    applyReactGrabToolbarPlacement(api);
 
     api.registerPlugin({
       name: "agentation-webhook-bridge",
@@ -311,7 +332,7 @@
     });
 
     reactGrabPluginRegistered = true;
-    console.log("[Agentation] React Grab plugin bridge registered");
+    console.log("[Floop] React Grab plugin bridge registered");
     return true;
   }
 
@@ -332,7 +353,7 @@
       if (attempts >= 60) {
         clearInterval(reactGrabBridgePoll);
         reactGrabBridgePoll = null;
-        console.warn("[Agentation] React Grab plugin bridge not available after waiting");
+        console.warn("[Floop] React Grab plugin bridge not available after waiting");
       }
     }, 500);
   }

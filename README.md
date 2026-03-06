@@ -39,7 +39,7 @@ See [INSTALL.md](./INSTALL.md) — step-by-step instructions designed for AI cod
 cd /your/project && node /path/to/webhook-receiver.mjs
 
 # 3a. React: npm install agentation, add <Agentation> component (see integration/)
-# 3b. Plain HTML: add one <script> tag (see integration/agentation-vanilla.js)
+# 3b. Plain HTML: add one <script> tag (see integration/floop-vanilla.js)
 ```
 
 ## Files
@@ -51,7 +51,7 @@ cd /your/project && node /path/to/webhook-receiver.mjs
 | `integration/agentation-agent-select.tsx` | React agent/model selector dropdown (Codex / Claude / OpenClaw / OpenCode / Cursor / Kiro) |
 | `integration/agentation-hook.ts` | React hook for auto-resolution (SSE + localStorage cleanup + remount) |
 | `integration/page.tsx` | Minimal React/Next.js example with all components |
-| `integration/agentation-vanilla.js` | Single `<script>` tag for plain HTML (status + agent/model selector + optional auto-reload + tool mode switch: Agentation/React Grab/Both) |
+| `integration/floop-vanilla.js` | Single `<script>` tag for plain HTML (status + agent/model selector + optional auto-reload + tool mode switch: Agentation/React Grab/Both) |
 | `integration/example.html` | Plain HTML example |
 | `INSTALL.md` | Agent-friendly installation guide |
 | `INTERNALS.md` | Agentation library internals (localStorage schema, API, data model) |

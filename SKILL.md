@@ -79,13 +79,13 @@ const isDev = process.env.NODE_ENV !== "production";
 
 ### Step 2b: Plain HTML (no build step)
 
-Copy `{baseDir}/integration/agentation-vanilla.js` to the project directory.
+Copy `{baseDir}/integration/floop-vanilla.js` to the project directory.
 
 Add before `</body>`:
 
 ```html
 <script
-  src="agentation-vanilla.js"
+  src="floop-vanilla.js"
   data-webhook="http://localhost:4848/webhook"
   data-auto-reload="true"
   data-auto-reload-delay="1200"

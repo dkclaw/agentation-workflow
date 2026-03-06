@@ -101,13 +101,13 @@ Next.js, Vite, and CRA all set `NODE_ENV=production` during `npm run build` / `n
 
 ### Option B: Plain HTML (no build step)
 
-#### 1. Copy `agentation-vanilla.js` to your project
+#### 1. Copy `floop-vanilla.js` to your project
 
 #### 2. Add one script tag before `</body>`
 
 ```html
 <script
-  src="agentation-vanilla.js"
+  src="floop-vanilla.js"
   data-webhook="http://localhost:4848/webhook"
 ></script>
 ```
@@ -125,17 +125,21 @@ That's it. The script loads React + Agentation from CDN automatically.
 | `data-auto-reload` | No | `false` | Auto-reload page after resolved annotations (plain HTML helper) |
 | `data-auto-reload-delay` | No | `1200` | Delay (ms) before auto-reload |
 | `data-inspector` | No | `agentation` | Inspector tool mode: `agentation`, `react-grab`, or `both` (React Grab `onCopySuccess` events are bridged as synthetic `annotation.add`) |
+| `data-react-grab-edge` | No | `right` | Default React Grab toolbar dock edge (`top`/`bottom`/`left`/`right`) |
+| `data-react-grab-ratio` | No | `0.88` | Default React Grab toolbar position along edge (0..1) |
 
 **Example with all options:**
 ```html
 <script
-  src="agentation-vanilla.js"
+  src="floop-vanilla.js"
   data-webhook="http://192.168.1.50:4848/webhook"
   data-sse="http://192.168.1.50:4848/events"
   data-mcp="http://192.168.1.50:4747"
   data-auto-reload="true"
   data-auto-reload-delay="1200"
   data-inspector="both"
+  data-react-grab-edge="right"
+  data-react-grab-ratio="0.88"
 ></script>
 ```
 
@@ -149,7 +153,7 @@ Create a separate `agentation-dev.html` snippet and include it via your build/de
 
 ```html
 <!-- agentation-dev.html — add to .gitignore or strip during deploy -->
-<script src="agentation-vanilla.js" data-webhook="http://localhost:4848/webhook"></script>
+<script src="floop-vanilla.js" data-webhook="http://localhost:4848/webhook"></script>
 ```
 
 **Option 2: Server-side conditional**
@@ -158,7 +162,7 @@ If using a templating engine (PHP, Jinja, EJS, etc.):
 
 ```html
 <% if (process.env.NODE_ENV !== 'production') { %>
-  <script src="agentation-vanilla.js" data-webhook="http://localhost:4848/webhook"></script>
+  <script src="floop-vanilla.js" data-webhook="http://localhost:4848/webhook"></script>
 <% } %>
 ```
 
@@ -174,7 +178,7 @@ sed -i '/<script.*agentation-vanilla/d' index.html
 
 ```html
 <!-- DEV ONLY: Remove before production deploy -->
-<script src="agentation-vanilla.js" data-webhook="http://localhost:4848/webhook"></script>
+<script src="floop-vanilla.js" data-webhook="http://localhost:4848/webhook"></script>
 <!-- /DEV ONLY -->
 ```
 
@@ -350,7 +354,7 @@ Tailscale lets you expose your dev server and webhook receiver to other devices 
    For plain HTML:
    ```html
    <script
-     src="agentation-vanilla.js"
+     src="floop-vanilla.js"
      data-webhook="http://100.89.253.104:4848/webhook"
    ></script>
    ```
