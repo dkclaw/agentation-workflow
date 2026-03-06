@@ -124,12 +124,39 @@
     return null;
   }
 
+  function rgbToLuma(rgb) {
+    const m = String(rgb || "").match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+    if (!m) return null;
+    const r = Number(m[1]), g = Number(m[2]), b = Number(m[3]);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  function inferThemeFromAgentationVisual() {
+    try {
+      const buttons = collectButtonsDeep(document);
+      const rootBtn = buttons.find((b) => /\/agentation/i.test((b.textContent || "").trim()));
+      if (!rootBtn) return null;
+      const bg = getComputedStyle(rootBtn).backgroundColor;
+      const luma = rgbToLuma(bg);
+      if (luma == null) return null;
+      return luma < 128 ? "dark" : "light";
+    } catch {
+      return null;
+    }
+  }
+
   function isDarkModeActive() {
     try {
       const fromToggle = readAgentationThemeFromToggle();
       if (fromToggle) {
         try { localStorage.setItem(THEME_CACHE_KEY, fromToggle); } catch {}
         return fromToggle === "dark";
+      }
+
+      const fromVisual = inferThemeFromAgentationVisual();
+      if (fromVisual) {
+        try { localStorage.setItem(THEME_CACHE_KEY, fromVisual); } catch {}
+        return fromVisual === "dark";
       }
 
       const fromAgentStorage = readThemeFromStorageHeuristics();
