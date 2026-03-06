@@ -24,7 +24,7 @@
  *   data-auto-reload-delay — Delay before reload in ms (default: 1200)
  *   data-inspector — "agentation" | "react-grab" | "both" (default: "agentation")
  *   data-react-grab-edge — "top" | "bottom" | "left" | "right" (default: "right")
- *   data-react-grab-ratio — 0..1 position along edge (default: 0.88)
+ *   data-react-grab-ratio — 0..1 position along edge (default: 0.72)
  */
 (function () {
   "use strict";
@@ -38,7 +38,7 @@
   const autoReloadDelayMs = Math.max(0, parseInt(scriptTag?.getAttribute("data-auto-reload-delay") || "1200", 10) || 1200);
   const inspectorModeAttr = (scriptTag?.getAttribute("data-inspector") || "agentation").toLowerCase();
   const reactGrabEdgeAttr = (scriptTag?.getAttribute("data-react-grab-edge") || "right").toLowerCase();
-  const reactGrabRatio = Math.min(1, Math.max(0, parseFloat(scriptTag?.getAttribute("data-react-grab-ratio") || "0.88") || 0.88));
+  const reactGrabRatio = Math.min(1, Math.max(0, parseFloat(scriptTag?.getAttribute("data-react-grab-ratio") || "0.72") || 0.72));
 
   // Derive URLs from webhook URL if not explicitly set
   const baseUrl = webhookUrl.replace(/\/webhook$/, "");
@@ -240,7 +240,14 @@
       const rootBtn = buttons.find((b) => /\/agentation/i.test((b.textContent || "").trim()));
       if (!rootBtn) return;
       const container = rootBtn.closest("[style]") || rootBtn.parentElement;
-      if (container) container.style.display = visible ? "" : "none";
+      if (!container) return;
+
+      container.style.display = visible ? "" : "none";
+      if (visible) {
+        // Keep Agentation above common chat bubbles and away from React Grab toolbar defaults.
+        container.style.bottom = "112px";
+        container.style.right = "20px";
+      }
     } catch {}
   }
 

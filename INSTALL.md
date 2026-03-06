@@ -126,7 +126,7 @@ That's it. The script loads React + Agentation from CDN automatically.
 | `data-auto-reload-delay` | No | `1200` | Delay (ms) before auto-reload |
 | `data-inspector` | No | `agentation` | Inspector tool mode: `agentation`, `react-grab`, or `both` (React Grab `onCopySuccess` events are bridged as synthetic `annotation.add`) |
 | `data-react-grab-edge` | No | `right` | Default React Grab toolbar dock edge (`top`/`bottom`/`left`/`right`) |
-| `data-react-grab-ratio` | No | `0.88` | Default React Grab toolbar position along edge (0..1) |
+| `data-react-grab-ratio` | No | `0.72` | Default React Grab toolbar position along edge (0..1) |
 
 **Example with all options:**
 ```html
@@ -139,7 +139,7 @@ That's it. The script loads React + Agentation from CDN automatically.
   data-auto-reload-delay="1200"
   data-inspector="both"
   data-react-grab-edge="right"
-  data-react-grab-ratio="0.88"
+  data-react-grab-ratio="0.72"
 ></script>
 ```
 
