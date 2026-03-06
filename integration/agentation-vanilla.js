@@ -20,6 +20,8 @@
  *   data-sse      — SSE endpoint for auto-resolution (default: derives from webhook URL)
  *   data-mcp      — MCP server URL (optional)
  *   data-auto-send — Auto-send annotations (default: true)
+ *   data-auto-reload — Auto-reload page after resolved annotations (default: false)
+ *   data-auto-reload-delay — Delay before reload in ms (default: 1200)
  */
 (function () {
   "use strict";
@@ -29,6 +31,8 @@
   const webhookUrl = scriptTag?.getAttribute("data-webhook") || "";
   const mcpUrl = scriptTag?.getAttribute("data-mcp") || "";
   const autoSend = scriptTag?.getAttribute("data-auto-send") !== "false";
+  const autoReload = scriptTag?.getAttribute("data-auto-reload") === "true";
+  const autoReloadDelayMs = Math.max(0, parseInt(scriptTag?.getAttribute("data-auto-reload-delay") || "1200", 10) || 1200);
 
   // Derive URLs from webhook URL if not explicitly set
   const baseUrl = webhookUrl.replace(/\/webhook$/, "");
@@ -70,6 +74,20 @@
   // --- SSE Listener for auto-resolution ---
   let remountCounter = 0;
   let renderFn = null;
+  let reloadScheduled = false;
+
+  function scheduleAutoReload(reason) {
+    if (!autoReload || reloadScheduled) return;
+    reloadScheduled = true;
+    console.log(`[Agentation] Auto-reload scheduled (${reason}) in ${autoReloadDelayMs}ms`);
+    setTimeout(() => {
+      try {
+        window.location.reload();
+      } catch {
+        reloadScheduled = false;
+      }
+    }, autoReloadDelayMs);
+  }
 
   function removeFromStorage(ids) {
     const pathname = window.location.pathname;
@@ -532,6 +550,9 @@
           if (changed && renderFn) {
             remountCounter++;
             renderFn(remountCounter);
+          }
+          if (changed) {
+            scheduleAutoReload("annotation-resolved");
           }
         }
       } catch {}
