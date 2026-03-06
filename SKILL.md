@@ -89,12 +89,17 @@ Add before `</body>`:
   data-webhook="http://localhost:4848/webhook"
   data-auto-reload="true"
   data-auto-reload-delay="1200"
+  data-inspector="both"
 ></script>
 ```
 
 No npm install needed. Loads React + Agentation from CDN automatically.
 
 For plain HTML projects that don’t hot-reload, `data-auto-reload="true"` lets the page refresh automatically after resolved annotation updates.
+
+The vanilla panel now supports `data-inspector` with `agentation`, `react-grab`, or `both` so teams can switch tools per page/session.
+
+For HTML-heavy presentation pages, the webhook receiver also attempts likely source line references (`file#Lline`) from annotation context to make edits more targeted.
 
 **Important:** Remove this `<script>` tag before deploying to production. See [INSTALL.md]({baseDir}/INSTALL.md) for strategies (git-ignore, CI strip, server-side conditional).
 

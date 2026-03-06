@@ -124,6 +124,7 @@ That's it. The script loads React + Agentation from CDN automatically.
 | `data-auto-send` | No | `true` | Auto-send annotations |
 | `data-auto-reload` | No | `false` | Auto-reload page after resolved annotations (plain HTML helper) |
 | `data-auto-reload-delay` | No | `1200` | Delay (ms) before auto-reload |
+| `data-inspector` | No | `agentation` | Inspector tool mode: `agentation`, `react-grab`, or `both` |
 
 **Example with all options:**
 ```html
@@ -134,6 +135,7 @@ That's it. The script loads React + Agentation from CDN automatically.
   data-mcp="http://192.168.1.50:4747"
   data-auto-reload="true"
   data-auto-reload-delay="1200"
+  data-inspector="both"
 ></script>
 ```
 
@@ -238,7 +240,7 @@ The receiver auto-detects project type (Next.js, Vite, or static HTML) and adjus
 1. **Human annotates** — Click elements in the browser, add comments describing desired changes
 2. **Webhook receives** — Annotations are POSTed to `/webhook`
 3. **Batch window** — Waits 10s (configurable) to collect multiple annotations into one task
-4. **Agent spawns** — Codex runs in `--full-auto` mode against your project directory
+4. **Agent spawns** — Codex runs in `--full-auto` mode against your project directory (for static HTML pages, the receiver also computes likely `file#Lline` references when possible)
 5. **Code changes** — Agent edits source files based on annotation descriptions
 6. **Hot reload** — Next.js/Vite auto-reload; plain HTML can use `data-auto-reload="true"` (or refresh manually)
 7. **Resolution broadcast** — When agent exits, resolved annotation IDs are sent via SSE
