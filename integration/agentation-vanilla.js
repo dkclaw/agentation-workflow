@@ -163,12 +163,12 @@
     modelSelect.style.cssText = "border:1px solid #d0d0d0;border-radius:4px;padding:3px 6px;font-size:12px;background:white;cursor:pointer;outline:none;color:#333;max-width:220px;";
 
     const agents = [
-      { value: "codex", label: "⚡ Codex" },
-      { value: "claude", label: "✴️ Claude" },
-      { value: "openclaw", label: "🦞 OpenClaw" },
-      { value: "opencode", label: "🧠 OpenCode" },
-      { value: "cursor", label: "🖱️ Cursor" },
-      { value: "kiro", label: "🪄 Kiro" },
+      { value: "codex", label: "⚡ Codex", assumeInstalled: true },
+      { value: "claude", label: "✴️ Claude", assumeInstalled: true },
+      { value: "openclaw", label: "🦞 OpenClaw", assumeInstalled: true },
+      { value: "opencode", label: "🧠 OpenCode", assumeInstalled: false },
+      { value: "cursor", label: "🖱️ Cursor", assumeInstalled: false },
+      { value: "kiro", label: "🪄 Kiro", assumeInstalled: false },
     ];
 
     const CURATED_MODEL_OPTIONS = {
@@ -213,10 +213,11 @@
       refreshModelOptions(CURATED_MODEL_OPTIONS[agentName] || [""]);
     }
 
-    agents.forEach(({ value, label: text }) => {
+    agents.forEach(({ value, label: text, assumeInstalled }) => {
       const opt = document.createElement("option");
       opt.value = value;
-      opt.textContent = text;
+      opt.disabled = !assumeInstalled;
+      opt.textContent = assumeInstalled ? text : `${text} (checking...)`;
       if (value === currentAgent) opt.selected = true;
       select.appendChild(opt);
     });
