@@ -14,7 +14,7 @@ const AGENTS = [
 const CURATED_MODEL_OPTIONS: Record<string, string[]> = {
   codex: ["", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2-codex"],
   claude: ["", "default", "sonnet", "opus", "haiku", "opusplan"],
-  opencode: ["", "opencode/gpt-5.1-codex", "opencode/gpt-5.2", "anthropic/claude-sonnet-4-5"],
+  opencode: [""],
   cursor: ["", "gpt-5.2", "gpt-5.1", "claude-sonnet-4-6", "claude-opus-4-6"],
   kiro: ["", "default"],
   openclaw: [""],
@@ -170,8 +170,9 @@ export function AgentSelect({
       setShowCustomInput(false);
       return;
     }
-    await handleModelChange(customModelText);
+    await handleModelChange(customModelText.trim());
     setCustomModelText("");
+    setShowCustomInput(false);
   };
 
   const postJson = async (url: string, payload: any) => {
@@ -283,7 +284,7 @@ export function AgentSelect({
           })}
         </select>
 
-        <span style={{ color: "#666", fontWeight: 500 }} title={`Model source: ${modelSource}`}>(Model:</span>
+        <span style={{ color: "#666", fontWeight: 500 }} title={`Model source: ${modelSource}`}>Model:</span>
         {showCustomInput ? (
           <input
             type="text"
@@ -315,11 +316,12 @@ export function AgentSelect({
             {modelOptions.map((m) => {
               const text = m ? String(m) : "(default)";
               return (
-                <option key={m || "default"} value={m || ""} disabled={!m && !showCustomInput}>
+                <option key={m || "default"} value={m || ""}>
                   {text}
                 </option>
               );
             })}
+            <option value="custom">Custom…</option>
           </select>
         )}
       </div>

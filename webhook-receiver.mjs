@@ -168,7 +168,8 @@ const MODEL_REGISTRY = {
   codex: ["", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2-codex"],
   claude: ["", "default", "sonnet", "opus", "haiku", "opusplan"],
   openclaw: [""],
-  opencode: ["", "opencode/gpt-5.1-codex", "opencode/gpt-5.2", "anthropic/claude-sonnet-4-5"],
+  // Keep OpenCode dynamic-only to avoid showing stale/non-CLI models.
+  opencode: [""],
   cursor: ["", "gpt-5.2", "gpt-5.1", "claude-sonnet-4-6", "claude-opus-4-6"],
   kiro: ["", "default"],
 };
@@ -214,7 +215,16 @@ function getModelsForAgent(agent) {
 
   if (agent === "opencode") {
     discovered = discoverOpenCodeModels();
-    if (discovered.length) source = "curated+dynamic";
+    source = discovered.length ? "dynamic" : "dynamic-unavailable";
+    const models = mergeUniqueModels([""], discovered);
+    modelCache.set(agent, { models, source, _fetchedAtMs: now });
+    return {
+      agent,
+      models,
+      source,
+      supportsCustom: true,
+      fetchedAt: new Date(now).toISOString(),
+    };
   }
 
   const models = mergeUniqueModels(MODEL_REGISTRY[agent] || [""], discovered);

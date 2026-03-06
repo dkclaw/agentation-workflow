@@ -174,7 +174,7 @@
     const CURATED_MODEL_OPTIONS = {
       codex: ["", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2-codex"],
       claude: ["", "default", "sonnet", "opus", "haiku", "opusplan"],
-      opencode: ["", "opencode/gpt-5.1-codex", "opencode/gpt-5.2", "anthropic/claude-sonnet-4-5"],
+      opencode: [""],
       cursor: ["", "gpt-5.2", "gpt-5.1", "claude-sonnet-4-6", "claude-opus-4-6"],
       kiro: ["", "default"],
       openclaw: [""],
@@ -196,7 +196,6 @@
       const customOpt = document.createElement("option");
       customOpt.value = "custom";
       customOpt.textContent = "Custom…";
-      customOpt.disabled = true;
       modelSelect.appendChild(customOpt);
       if (!options.includes(currentModel)) currentModel = options[0] || "";
       modelSelect.value = currentModel;
@@ -244,67 +243,28 @@
     modelSelect.addEventListener("change", async () => {
       const val = modelSelect.value;
       if (val === "custom") {
-        // Un-disable and show text input
-        currentModel = "";
-        localStorage.removeItem("agentation-selected-model");
-        try {
-          await fetch(agentApiUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: currentModel }),
-          });
-        } catch (err) {
-          console.warn("[Agentation] Failed to sync custom model:", err);
+        const entered = (window.prompt("Enter custom model string:", currentModel || "") || "").trim();
+        if (!entered) {
+          modelSelect.value = currentModel || "";
+          return;
         }
+        currentModel = entered;
       } else {
-        // Normal selection
         currentModel = val;
-        localStorage.setItem("agentation-selected-model", currentModel);
-        try {
-          await fetch(agentApiUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: currentModel }),
-          });
-        } catch (err) {
-          console.warn("[Agentation] Failed to update model on server:", err);
-        }
+      }
+      localStorage.setItem("agentation-selected-model", currentModel);
+      try {
+        await fetch(agentApiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: currentModel }),
+        });
+      } catch (err) {
+        console.warn("[Agentation] Failed to update model on server:", err);
       }
     });
 
-    // Custom model input overlay
-    let customInputEl = null;
-    const createCustomModelInput = () => {
-      if (customInputEl) return;
-      customInputEl = document.createElement("input");
-      customInputEl.id = "agentation-custom-model-input";
-      customInputEl.type = "text";
-      customInputEl.placeholder = "Enter model name (e.g. codex/ft-mycustommodel)";
-      customInputEl.style.cssText = "border:1px solid #3b82f6;border-radius:4px;padding:3px 8px;font-size:12px;background:#fff;outline:none;width:200px;display:none;margin-top:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15);font-family:sans-serif;";
-      modelSelect.parentNode.appendChild(customInputEl);
-    };
 
-    const hideCustomModelInput = () => {
-      if (!customInputEl) return;
-      customInputEl.style.display = "none";
-      customInputEl.value = "";
-    };
-
-    const showCustomModelInput = () => {
-      createCustomModelInput();
-      hideCustomModelInput();
-      setTimeout(() => {
-        customInputEl.style.display = "block";
-        customInputEl.focus();
-      }, 10);
-    };
-
-    modelSelect.addEventListener("focus", () => {
-      if (modelSelect.value === "custom") showCustomModelInput();
-    });
-
-    modelSelect.addEventListener("blur", hideCustomModelInput);
-    modelSelect.addEventListener("click", hideCustomModelInput);
 
     const commitBtn = document.createElement("button");
     commitBtn.textContent = "Save…";
