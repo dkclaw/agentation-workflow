@@ -127,13 +127,28 @@ const AGENT_DEFS = {
 };
 const AGENT_ORDER = ["codex", "claude", "openclaw", "opencode", "cursor", "kiro"];
 
-function isCommandAvailable(bin) {
-  try {
-    execSync(`command -v ${bin}`, { stdio: "pipe" });
-    return true;
-  } catch {
-    return false;
+function shellQuote(s) {
+  return `'${String(s).replace(/'/g, `'\\''`)}'`;
+}
+
+function findCommandPath(bin) {
+  const checks = [
+    `command -v ${bin} || true`,
+    `bash -lc 'command -v ${bin} || true'`,
+    `zsh -lc 'command -v ${bin} || true'`,
+    `for p in $HOME/.local/bin /usr/local/bin /opt/homebrew/bin; do [ -x "$p/${bin}" ] && echo "$p/${bin}"; done`,
+  ];
+  for (const cmd of checks) {
+    try {
+      const out = execSync(cmd, { stdio: "pipe" }).toString().trim();
+      if (out) return out.split("\n")[0].trim();
+    } catch {}
   }
+  return "";
+}
+
+function isCommandAvailable(bin) {
+  return !!findCommandPath(bin);
 }
 
 function getInstalledMap() {
@@ -148,6 +163,71 @@ const INSTALLED_AGENTS = getInstalledMap();
 const DEFAULT_AGENT = INSTALLED_AGENTS[process.env.AGENTATION_AGENT || "codex"]
   ? (process.env.AGENTATION_AGENT || "codex")
   : (AGENT_ORDER.find((k) => INSTALLED_AGENTS[k]) || "codex");
+
+const MODEL_REGISTRY = {
+  codex: ["", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2-codex"],
+  claude: ["", "default", "sonnet", "opus", "haiku", "opusplan"],
+  openclaw: [""],
+  opencode: ["", "opencode/gpt-5.1-codex", "opencode/gpt-5.2", "anthropic/claude-sonnet-4-5"],
+  cursor: ["", "gpt-5.2", "gpt-5.1", "claude-sonnet-4-6", "claude-opus-4-6"],
+  kiro: ["", "default"],
+};
+
+const modelCache = new Map();
+const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
+
+function mergeUniqueModels(primary = [], secondary = []) {
+  const set = new Set([...(primary || []), ...(secondary || [])]);
+  // keep default/blank first
+  const arr = Array.from(set).filter((x) => typeof x === "string");
+  const rest = arr.filter((m) => m !== "").sort();
+  return ["", ...rest];
+}
+
+function discoverOpenCodeModels() {
+  if (!isCommandAvailable("opencode")) return [];
+  try {
+    const out = execSync("opencode models", { cwd: PROJECT_DIR, stdio: "pipe", timeout: 15000 }).toString();
+    const matches = out.match(/[a-z0-9_-]+\/[a-z0-9._:-]+/gi) || [];
+    const uniq = Array.from(new Set(matches)).slice(0, 120);
+    return uniq;
+  } catch {
+    return [];
+  }
+}
+
+function getModelsForAgent(agent) {
+  const now = Date.now();
+  const cached = modelCache.get(agent);
+  if (cached && now - cached._fetchedAtMs < MODEL_CACHE_TTL_MS) {
+    return {
+      agent,
+      models: cached.models,
+      source: cached.source,
+      supportsCustom: true,
+      fetchedAt: new Date(cached._fetchedAtMs).toISOString(),
+    };
+  }
+
+  let discovered = [];
+  let source = "curated";
+
+  if (agent === "opencode") {
+    discovered = discoverOpenCodeModels();
+    if (discovered.length) source = "curated+dynamic";
+  }
+
+  const models = mergeUniqueModels(MODEL_REGISTRY[agent] || [""], discovered);
+  modelCache.set(agent, { models, source, _fetchedAtMs: now });
+
+  return {
+    agent,
+    models,
+    source,
+    supportsCustom: true,
+    fetchedAt: new Date(now).toISOString(),
+  };
+}
 
 function getAgentCommand(agentName, prompt, model) {
   const safeModel = model ? String(model).trim() : "";
@@ -355,6 +435,25 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.url.startsWith("/agent/models") && req.method === "GET") {
+    try {
+      const u = new URL(req.url, `http://localhost:${PORT}`);
+      const agent = (u.searchParams.get("agent") || selectedAgent || DEFAULT_AGENT).trim();
+      if (!AGENT_DEFS[agent]) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: `Unknown agent: ${agent}` }));
+        return;
+      }
+      const data = getModelsForAgent(agent);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(data));
+    } catch (err) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
   // Agent selection endpoint
   // GET /agent — returns current agent, model, and installed map
   // POST /agent — set {"agent":"codex", "model":"..."}
@@ -362,11 +461,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET") {
       const installed = getInstalledMap();
       res.writeHead(200, { "Content-Type": "application/json" });
+      const modelMeta = getModelsForAgent(selectedAgent);
       res.end(JSON.stringify({
         current: selectedAgent,
         model: selectedModel,
         available: AGENT_ORDER,
         installed,
+        models: modelMeta.models,
+        modelSource: modelMeta.source,
       }));
       return;
     }
@@ -388,10 +490,13 @@ const server = http.createServer(async (req, res) => {
               return;
             }
             selectedAgent = agent;
+            const validModels = getModelsForAgent(selectedAgent).models;
+            if (!validModels.includes(selectedModel)) selectedModel = "";
             console.log(`[CONFIG] Agent changed to: ${agent}`);
           }
           if (typeof model === "string") {
-            selectedModel = model.trim();
+            const candidate = model.trim();
+            selectedModel = candidate; // allow curated or custom model values
           }
           broadcast({ type: "agent-changed", agent: selectedAgent, model: selectedModel });
           res.writeHead(200, { "Content-Type": "application/json" });

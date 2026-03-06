@@ -34,6 +34,7 @@
   const baseUrl = webhookUrl.replace(/\/webhook$/, "");
   const sseUrl = scriptTag?.getAttribute("data-sse") || (baseUrl ? `${baseUrl}/events` : "");
   const agentApiUrl = baseUrl ? `${baseUrl}/agent` : "";
+  const modelApiUrl = baseUrl ? `${baseUrl}/agent/models` : "";
   const gitApiUrl = baseUrl ? `${baseUrl}/git/commit` : "";
 
   if (!webhookUrl) {
@@ -170,7 +171,7 @@
       { value: "kiro", label: "🪄 Kiro" },
     ];
 
-    const MODEL_OPTIONS = {
+    const CURATED_MODEL_OPTIONS = {
       codex: ["", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2-codex"],
       claude: ["", "default", "sonnet", "opus", "haiku", "opusplan"],
       opencode: ["", "opencode/gpt-5.1-codex", "opencode/gpt-5.2", "anthropic/claude-sonnet-4-5"],
@@ -179,8 +180,11 @@
       openclaw: [""],
     };
 
-    function refreshModelOptions() {
-      const options = MODEL_OPTIONS[currentAgent] || [""];
+    let dynamicModelOptions = CURATED_MODEL_OPTIONS[currentAgent] || [""];
+
+    function refreshModelOptions(optionsArg) {
+      const options = optionsArg || dynamicModelOptions || CURATED_MODEL_OPTIONS[currentAgent] || [""];
+      dynamicModelOptions = options;
       modelSelect.innerHTML = "";
       options.forEach((m) => {
         const opt = document.createElement("option");
@@ -188,10 +192,20 @@
         opt.textContent = m || "(default)";
         modelSelect.appendChild(opt);
       });
-      if (!options.includes(currentModel)) {
-        currentModel = options[0] || "";
-      }
+      if (!options.includes(currentModel)) currentModel = options[0] || "";
       modelSelect.value = currentModel;
+    }
+
+    async function loadModelsForAgent(agentName) {
+      try {
+        const res = await fetch(`${modelApiUrl}?agent=${encodeURIComponent(agentName)}`);
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.models) && data.models.length) {
+          refreshModelOptions(data.models);
+          return;
+        }
+      } catch {}
+      refreshModelOptions(CURATED_MODEL_OPTIONS[agentName] || [""]);
     }
 
     agents.forEach(({ value, label: text }) => {
@@ -203,11 +217,12 @@
     });
 
     refreshModelOptions();
+    loadModelsForAgent(currentAgent);
 
     select.addEventListener("change", async () => {
       currentAgent = select.value;
       localStorage.setItem("agentation-selected-agent", currentAgent);
-      refreshModelOptions();
+      await loadModelsForAgent(currentAgent);
       try {
         await fetch(agentApiUrl, {
           method: "POST",
@@ -426,8 +441,14 @@
         if (typeof data.model === "string" && !savedModel) {
           currentModel = data.model;
         }
-        refreshModelOptions();
-      }).catch(() => {});
+        if (Array.isArray(data.models) && data.models.length) {
+          refreshModelOptions(data.models);
+        } else {
+          loadModelsForAgent(currentAgent);
+        }
+      }).catch(() => {
+        loadModelsForAgent(currentAgent);
+      });
 
       // Sync current selection to server
       fetch(agentApiUrl, {
@@ -452,6 +473,7 @@
             currentAgent = data.agent;
             const sel = document.getElementById("agentation-agent-select");
             if (sel) sel.value = data.agent;
+            loadModelsForAgent(currentAgent);
           }
           if (typeof data.model === "string") {
             currentModel = data.model;

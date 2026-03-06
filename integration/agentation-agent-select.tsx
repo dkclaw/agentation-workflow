@@ -11,7 +11,7 @@ const AGENTS = [
   { value: "kiro", label: "🪄 Kiro" },
 ] as const;
 
-const MODEL_OPTIONS: Record<string, string[]> = {
+const CURATED_MODEL_OPTIONS: Record<string, string[]> = {
   codex: ["", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2-codex"],
   claude: ["", "default", "sonnet", "opus", "haiku", "opusplan"],
   opencode: ["", "opencode/gpt-5.1-codex", "opencode/gpt-5.2", "anthropic/claude-sonnet-4-5"],
@@ -45,6 +45,8 @@ export function AgentSelect({
     return localStorage.getItem(MODEL_STORAGE_KEY) || "";
   });
   const [installed, setInstalled] = useState<Record<string, boolean>>({});
+  const [modelOptions, setModelOptions] = useState<string[]>(CURATED_MODEL_OPTIONS[agent] || [""]);
+  const [modelSource, setModelSource] = useState("curated");
 
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showRevertModal, setShowRevertModal] = useState(false);
@@ -53,6 +55,7 @@ export function AgentSelect({
   const [commits, setCommits] = useState<CommitItem[]>([]);
   const [selectedCommit, setSelectedCommit] = useState("");
 
+  const modelApiUrl = useMemo(() => apiUrl.replace(/\/agent$/, "/agent/models"), [apiUrl]);
   const gitUrl = useMemo(() => apiUrl.replace(/\/agent$/, "/git/commit"), [apiUrl]);
   const gitAutoUrl = useMemo(() => apiUrl.replace(/\/agent$/, "/git/auto-commit"), [apiUrl]);
   const gitRecentUrl = useMemo(() => apiUrl.replace(/\/agent$/, "/git/recent?limit=10"), [apiUrl]);
@@ -69,6 +72,27 @@ export function AgentSelect({
     return data;
   };
 
+  const fetchModelOptions = async (agentName: string) => {
+    try {
+      const res = await fetch(`${modelApiUrl}?agent=${encodeURIComponent(agentName)}`);
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || res.statusText);
+      const opts = Array.isArray(data.models) && data.models.length ? data.models : (CURATED_MODEL_OPTIONS[agentName] || [""]);
+      setModelOptions(opts);
+      setModelSource(data.source || "curated");
+      if (!opts.includes(model)) {
+        const fallback = opts[0] || "";
+        setModel(fallback);
+        localStorage.setItem(MODEL_STORAGE_KEY, fallback);
+        await syncAgentConfig({ model: fallback });
+      }
+    } catch {
+      const fallbackOpts = CURATED_MODEL_OPTIONS[agentName] || [""];
+      setModelOptions(fallbackOpts);
+      setModelSource("curated-fallback");
+    }
+  };
+
   useEffect(() => {
     fetch(apiUrl)
       .then((r) => r.json())
@@ -83,6 +107,12 @@ export function AgentSelect({
         }
         if (data.installed && typeof data.installed === "object") {
           setInstalled(data.installed);
+        }
+        if (Array.isArray(data.models)) {
+          setModelOptions(data.models);
+        }
+        if (typeof data.modelSource === "string") {
+          setModelSource(data.modelSource);
         }
       })
       .catch(() => {});
@@ -107,6 +137,11 @@ export function AgentSelect({
     };
     return () => es.close();
   }, [sseUrl]);
+
+  useEffect(() => {
+    fetchModelOptions(agent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent]);
 
   const handleAgentChange = async (newAgent: string) => {
     setAgent(newAgent);
@@ -198,7 +233,6 @@ export function AgentSelect({
   };
 
   const posStyle = position === "bottom-left" ? { left: "20px" } : { right: "20px" };
-  const modelOptions = MODEL_OPTIONS[agent] || [""];
 
   return (
     <>
@@ -238,7 +272,7 @@ export function AgentSelect({
           })}
         </select>
 
-        <span style={{ color: "#666", fontWeight: 500 }}>Model:</span>
+        <span style={{ color: "#666", fontWeight: 500 }} title={`Model source: ${modelSource}`}>Model:</span>
         <select
           value={model}
           onChange={(e) => handleModelChange(e.target.value)}
