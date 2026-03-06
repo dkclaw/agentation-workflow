@@ -253,10 +253,11 @@
     }
   }
 
-  // Bridge React Grab copy events into annotation webhook events
+  // Bridge React Grab copy-success events into annotation webhook events
   let reactGrabCopyBridgeAttached = false;
+  let reactGrabPluginRegistered = false;
+  let reactGrabBridgePoll = null;
   let lastReactGrabCopy = { text: "", ts: 0 };
-  let lastReactGrabUiInteractionTs = 0;
 
   async function sendReactGrabCopyToWebhook(copiedText) {
     if (!webhookUrl) return;
@@ -294,32 +295,46 @@
     }
   }
 
+  function tryRegisterReactGrabPlugin() {
+    if (reactGrabPluginRegistered) return true;
+    const api = window.__REACT_GRAB__;
+    if (!api || typeof api.registerPlugin !== "function") return false;
+
+    api.registerPlugin({
+      name: "agentation-webhook-bridge",
+      hooks: {
+        onCopySuccess: (_elements, content) => {
+          if (!(activeInspector === "react-grab" || activeInspector === "both")) return;
+          sendReactGrabCopyToWebhook(content || "");
+        },
+      },
+    });
+
+    reactGrabPluginRegistered = true;
+    console.log("[Agentation] React Grab plugin bridge registered");
+    return true;
+  }
+
   function ensureReactGrabCopyBridge() {
     if (reactGrabCopyBridgeAttached) return;
     reactGrabCopyBridgeAttached = true;
 
-    // Track direct interaction with React Grab UI controls.
-    // In `both` mode, we only forward copy events that happen right after this interaction
-    // so normal Ctrl/Cmd+C usage on the page does not trigger agent work.
-    document.addEventListener("pointerdown", (ev) => {
-      const target = ev.target;
-      if (!(target instanceof Element)) return;
-      const rgRoot = target.closest('[data-react-grab], [class*="react-grab"], [id*="react-grab"]');
-      if (rgRoot) lastReactGrabUiInteractionTs = Date.now();
-    }, true);
+    if (tryRegisterReactGrabPlugin()) return;
 
-    document.addEventListener("copy", () => {
-      if (!(activeInspector === "react-grab" || activeInspector === "both")) return;
-
-      const withinWindow = Date.now() - lastReactGrabUiInteractionTs < 2500;
-      if (!withinWindow) return;
-
-      const selected = (window.getSelection && window.getSelection()?.toString()) || "";
-      const text = selected.trim();
-      if (!text) return;
-
-      sendReactGrabCopyToWebhook(text);
-    }, true);
+    let attempts = 0;
+    reactGrabBridgePoll = setInterval(() => {
+      attempts += 1;
+      if (tryRegisterReactGrabPlugin()) {
+        clearInterval(reactGrabBridgePoll);
+        reactGrabBridgePoll = null;
+        return;
+      }
+      if (attempts >= 60) {
+        clearInterval(reactGrabBridgePoll);
+        reactGrabBridgePoll = null;
+        console.warn("[Agentation] React Grab plugin bridge not available after waiting");
+      }
+    }, 500);
   }
 
   // --- SSE Listener for auto-resolution ---
