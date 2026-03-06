@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -45,8 +45,10 @@ export function AgentSelect({
     return localStorage.getItem(MODEL_STORAGE_KEY) || "";
   });
   const [installed, setInstalled] = useState<Record<string, boolean>>({});
-  const [modelOptions, setModelOptions] = useState<string[]>(CURATED_MODEL_OPTIONS[agent] || [""]);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelSource, setModelSource] = useState("curated");
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customModelText, setCustomModelText] = useState("");
 
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showRevertModal, setShowRevertModal] = useState(false);
@@ -163,6 +165,15 @@ export function AgentSelect({
     }
   };
 
+  const handleCustomModel = async () => {
+    if (!customModelText.trim()) {
+      setShowCustomInput(false);
+      return;
+    }
+    await handleModelChange(customModelText);
+    setCustomModelText("");
+  };
+
   const postJson = async (url: string, payload: any) => {
     const res = await fetch(url, {
       method: "POST",
@@ -272,26 +283,45 @@ export function AgentSelect({
           })}
         </select>
 
-        <span style={{ color: "#666", fontWeight: 500 }} title={`Model source: ${modelSource}`}>Model:</span>
-        <select
-          value={model}
-          onChange={(e) => handleModelChange(e.target.value)}
-          style={{ border: "1px solid #d0d0d0", borderRadius: "4px", padding: "3px 6px", fontSize: "12px", background: "white", cursor: "pointer", outline: "none", color: "#333", maxWidth: "220px" }}
-        >
-          {modelOptions.map((m) => (
-            <option key={m || "default"} value={m}>
-              {m ? m : "(default)"}
-            </option>
-          ))}
-        </select>
-
-        <button onClick={() => setShowSaveModal(true)} style={{ border: "1px solid #3b82f6", borderRadius: "4px", padding: "3px 8px", fontSize: "12px", background: "#eff6ff", cursor: "pointer", color: "#1d4ed8", fontWeight: 600 }}>
-          Save…
-        </button>
-
-        <button onClick={openRevertModal} style={{ border: "1px solid #ef4444", borderRadius: "4px", padding: "3px 8px", fontSize: "12px", background: "#fff1f2", cursor: "pointer", color: "#b91c1c", fontWeight: 600 }}>
-          Revert…
-        </button>
+        <span style={{ color: "#666", fontWeight: 500 }} title={`Model source: ${modelSource}`}>(Model:</span>
+        {showCustomInput ? (
+          <input
+            type="text"
+            value={customModelText}
+            onChange={(e) => setCustomModelText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                handleCustomModel();
+              } else if (e.key === "Escape") {
+                setShowCustomInput(false);
+                setModel("");
+              }
+            }}
+            style={{ border: "1px solid #3b82f6", borderRadius: "4px", padding: "3px 8px", fontSize: "12px", background: "white", outline: "none", width: "200px", boxShadow: "0 2px 8px rgba(0,0,0,0.15)", fontFamily: "sans-serif" }}
+            autoFocus
+          />
+        ) : (
+          <select
+            value={model}
+            onChange={(e) => {
+              if (e.target.value === "custom") {
+                setShowCustomInput(true);
+              } else {
+                handleModelChange(e.target.value);
+              }
+            }}
+            style={{ border: "1px solid #d0d0d0", borderRadius: "4px", padding: "3px 6px", fontSize: "12px", background: "white", cursor: "pointer", outline: "none", color: "#333", maxWidth: "220px" }}
+          >
+            {modelOptions.map((m) => {
+              const text = m ? String(m) : "(default)";
+              return (
+                <option key={m || "default"} value={m || ""} disabled={!m && !showCustomInput}>
+                  {text}
+                </option>
+              );
+            })}
+          </select>
+        )}
       </div>
 
       {showSaveModal && (

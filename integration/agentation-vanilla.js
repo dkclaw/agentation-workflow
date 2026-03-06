@@ -192,6 +192,12 @@
         opt.textContent = m || "(default)";
         modelSelect.appendChild(opt);
       });
+      // Add custom entry at end
+      const customOpt = document.createElement("option");
+      customOpt.value = "custom";
+      customOpt.textContent = "Custom…";
+      customOpt.disabled = true;
+      modelSelect.appendChild(customOpt);
       if (!options.includes(currentModel)) currentModel = options[0] || "";
       modelSelect.value = currentModel;
     }
@@ -236,18 +242,69 @@
     });
 
     modelSelect.addEventListener("change", async () => {
-      currentModel = modelSelect.value;
-      localStorage.setItem("agentation-selected-model", currentModel);
-      try {
-        await fetch(agentApiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: currentModel }),
-        });
-      } catch (err) {
-        console.warn("[Agentation] Failed to update model on server:", err);
+      const val = modelSelect.value;
+      if (val === "custom") {
+        // Un-disable and show text input
+        currentModel = "";
+        localStorage.removeItem("agentation-selected-model");
+        try {
+          await fetch(agentApiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: currentModel }),
+          });
+        } catch (err) {
+          console.warn("[Agentation] Failed to sync custom model:", err);
+        }
+      } else {
+        // Normal selection
+        currentModel = val;
+        localStorage.setItem("agentation-selected-model", currentModel);
+        try {
+          await fetch(agentApiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: currentModel }),
+          });
+        } catch (err) {
+          console.warn("[Agentation] Failed to update model on server:", err);
+        }
       }
     });
+
+    // Custom model input overlay
+    let customInputEl = null;
+    const createCustomModelInput = () => {
+      if (customInputEl) return;
+      customInputEl = document.createElement("input");
+      customInputEl.id = "agentation-custom-model-input";
+      customInputEl.type = "text";
+      customInputEl.placeholder = "Enter model name (e.g. codex/ft-mycustommodel)";
+      customInputEl.style.cssText = "border:1px solid #3b82f6;border-radius:4px;padding:3px 8px;font-size:12px;background:#fff;outline:none;width:200px;display:none;margin-top:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15);font-family:sans-serif;";
+      modelSelect.parentNode.appendChild(customInputEl);
+    };
+
+    const hideCustomModelInput = () => {
+      if (!customInputEl) return;
+      customInputEl.style.display = "none";
+      customInputEl.value = "";
+    };
+
+    const showCustomModelInput = () => {
+      createCustomModelInput();
+      hideCustomModelInput();
+      setTimeout(() => {
+        customInputEl.style.display = "block";
+        customInputEl.focus();
+      }, 10);
+    };
+
+    modelSelect.addEventListener("focus", () => {
+      if (modelSelect.value === "custom") showCustomModelInput();
+    });
+
+    modelSelect.addEventListener("blur", hideCustomModelInput);
+    modelSelect.addEventListener("click", hideCustomModelInput);
 
     const commitBtn = document.createElement("button");
     commitBtn.textContent = "Save…";
