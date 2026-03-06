@@ -36,9 +36,32 @@ function spawnCodingAgent(annotations) {
     })
     .join("\n\n");
 
+  // Detect project type for smarter agent prompts
+  const projectType = (() => {
+    if (fs.existsSync(`${PROJECT_DIR}/next.config.js`) || fs.existsSync(`${PROJECT_DIR}/next.config.mjs`) || fs.existsSync(`${PROJECT_DIR}/next.config.ts`)) {
+      return {
+        description: `The project is a Next.js app in ${PROJECT_DIR}. The main page component is at app/page.tsx.`,
+        instructions: "- After making changes, the Next.js dev server will hot-reload automatically",
+      };
+    }
+    if (fs.existsSync(`${PROJECT_DIR}/vite.config.js`) || fs.existsSync(`${PROJECT_DIR}/vite.config.ts`)) {
+      return {
+        description: `The project is a Vite app in ${PROJECT_DIR}.`,
+        instructions: "- After making changes, the Vite dev server will hot-reload automatically",
+      };
+    }
+    const pageUrl = annotations[0]?.url;
+    const urlPath = pageUrl ? new URL(pageUrl).pathname : "/";
+    const htmlFile = urlPath === "/" ? "index.html" : urlPath.replace(/\/$/, "") + ".html";
+    return {
+      description: `The project is a static HTML site in ${PROJECT_DIR}. The page being annotated is likely at ${htmlFile}. Look at the CSS paths and element selectors to find the right elements to modify.`,
+      instructions: `- Edit the HTML/CSS files directly (likely ${htmlFile} or linked stylesheets)\n- The user will refresh the browser to see changes`,
+    };
+  })();
+
   const prompt = `You are fixing UI issues based on visual feedback annotations from a human reviewer.
 
-The project is a Next.js app in ${PROJECT_DIR}. The main page component is at app/page.tsx.
+${projectType.description}
 
 ## Feedback to address:
 
@@ -47,11 +70,8 @@ ${feedbackBlock}
 ## Instructions:
 - Fix each annotation by editing the relevant files
 - Keep changes minimal and focused on what was requested
-- Do NOT modify the Agentation component or webhook setup
-- After making changes, the Next.js dev server will hot-reload automatically
-
-When completely finished, run this command to notify me:
-openclaw system event --text "Done: Fixed ${annotations.length} UI annotation(s) from Agentation feedback" --mode now`;
+- Do NOT modify any Agentation/webhook setup code or script tags
+${projectType.instructions}`;
 
   console.log(`\n[${new Date().toISOString()}] Spawning Codex agent for ${annotations.length} annotation(s)...`);
 
