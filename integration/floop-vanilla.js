@@ -251,18 +251,28 @@
     } catch {}
   }
 
+  function setAgentationInteractionEnabled(enabled) {
+    try {
+      const root = document.getElementById("agentation-vanilla-root");
+      if (root) root.style.pointerEvents = enabled ? "" : "none";
+    } catch {}
+  }
+
   function applyInspectorMode() {
     const mode = activeInspector;
     if (mode === "react-grab") {
       ensureReactGrabLoaded();
       ensureReactGrabCopyBridge();
       setAgentationUiVisible(false);
+      setAgentationInteractionEnabled(false);
     } else if (mode === "both") {
       ensureReactGrabLoaded();
       ensureReactGrabCopyBridge();
       setAgentationUiVisible(true);
+      setAgentationInteractionEnabled(true);
     } else {
       setAgentationUiVisible(true);
+      setAgentationInteractionEnabled(true);
     }
   }
 
