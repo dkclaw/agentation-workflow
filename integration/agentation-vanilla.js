@@ -71,6 +71,115 @@
     document.head.appendChild(fix);
   }
 
+  // --- Theme sync helpers (for matching Agentation/host light-dark mode) ---
+  const THEME_CACHE_KEY = "agentation-last-theme";
+
+  function collectButtonsDeep(root) {
+    const out = [];
+    const stack = [root];
+    while (stack.length) {
+      const node = stack.pop();
+      if (!node) continue;
+      try {
+        if (node.querySelectorAll) {
+          out.push(...Array.from(node.querySelectorAll("button")));
+          const all = node.querySelectorAll("*");
+          all.forEach((el) => {
+            if (el.shadowRoot) stack.push(el.shadowRoot);
+          });
+        }
+      } catch {}
+    }
+    return out;
+  }
+
+  function readAgentationThemeFromToggle() {
+    const buttons = collectButtonsDeep(document);
+    const switchBtn = buttons.find((b) => /switch to (light|dark) mode/i.test((b.textContent || "").trim()));
+    const txt = (switchBtn?.textContent || "").toLowerCase();
+    if (txt.includes("switch to light mode")) return "dark";
+    if (txt.includes("switch to dark mode")) return "light";
+    return null;
+  }
+
+  function readThemeFromStorageHeuristics() {
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i) || "";
+        const v = localStorage.getItem(k) || "";
+        if (!/(agentation|feedback)/i.test(k)) continue;
+
+        const lk = k.toLowerCase();
+        const lv = v.toLowerCase();
+
+        if (/(theme|mode|color)/.test(lk)) {
+          if (/"dark"|\bdark\b/.test(lv)) return "dark";
+          if (/"light"|\blight\b/.test(lv)) return "light";
+        }
+
+        if (/"theme"\s*:\s*"dark"/.test(lv) || /"mode"\s*:\s*"dark"/.test(lv)) return "dark";
+        if (/"theme"\s*:\s*"light"/.test(lv) || /"mode"\s*:\s*"light"/.test(lv)) return "light";
+      }
+    } catch {}
+    return null;
+  }
+
+  function isDarkModeActive() {
+    try {
+      const fromToggle = readAgentationThemeFromToggle();
+      if (fromToggle) {
+        try { localStorage.setItem(THEME_CACHE_KEY, fromToggle); } catch {}
+        return fromToggle === "dark";
+      }
+
+      const fromAgentStorage = readThemeFromStorageHeuristics();
+      if (fromAgentStorage) {
+        try { localStorage.setItem(THEME_CACHE_KEY, fromAgentStorage); } catch {}
+        return fromAgentStorage === "dark";
+      }
+
+      // If Agentation toggle is currently not visible, prefer last known Agentation mode.
+      const cached = localStorage.getItem(THEME_CACHE_KEY);
+      if (cached === "dark") return true;
+      if (cached === "light") return false;
+
+      // Fallback to page/system theme heuristics.
+      const html = document.documentElement;
+      const body = document.body;
+      const darkByClass = html?.classList?.contains("dark") || body?.classList?.contains("dark");
+      const darkByData = html?.dataset?.theme === "dark" || body?.dataset?.theme === "dark";
+      const darkByAttr = html?.getAttribute("data-color-mode") === "dark" || body?.getAttribute("data-color-mode") === "dark";
+      const darkByMedia = !!window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      return !!(darkByClass || darkByData || darkByAttr || darkByMedia);
+    } catch {
+      return false;
+    }
+  }
+
+  function onThemeChange(cb) {
+    const mql = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    const mo = new MutationObserver(() => cb());
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme", "data-color-mode"] });
+    if (document.body) {
+      mo.observe(document.body, {
+        attributes: true,
+        attributeFilter: ["class", "data-theme", "data-color-mode"],
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    }
+    if (mql?.addEventListener) mql.addEventListener("change", cb);
+    else if (mql?.addListener) mql.addListener(cb);
+    return () => {
+      try { mo.disconnect(); } catch {}
+      try {
+        if (mql?.removeEventListener) mql.removeEventListener("change", cb);
+        else if (mql?.removeListener) mql.removeListener(cb);
+      } catch {}
+    };
+  }
+
   // --- SSE Listener for auto-resolution ---
   let remountCounter = 0;
   let renderFn = null;
@@ -162,7 +271,7 @@
     console.log("[Agentation] Creating agent selector, agentApiUrl:", agentApiUrl);
     selectorEl = document.createElement("div");
     selectorEl.id = "agentation-agent-selector";
-    selectorEl.style.cssText = "position:fixed;bottom:16px;left:20px;z-index:2147483647;font-family:system-ui,-apple-system,sans-serif;font-size:13px;display:flex;align-items:center;gap:6px;background:white;padding:8px 12px;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.18);border:1px solid #ccc;";
+    selectorEl.style.cssText = "position:fixed;bottom:16px;left:20px;z-index:2147483647;font-family:system-ui,-apple-system,sans-serif;font-size:13px;display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,0.18);border:1px solid #ccc;";
 
     const label = document.createElement("span");
     label.textContent = "Agent:";
@@ -465,6 +574,33 @@
     selectorEl.appendChild(commitBtn);
     selectorEl.appendChild(revertBtn);
     document.body.appendChild(selectorEl);
+
+    function applySelectorTheme() {
+      const dark = isDarkModeActive();
+      selectorEl.style.background = dark ? "#111827" : "#ffffff";
+      selectorEl.style.border = dark ? "1px solid #374151" : "1px solid #ccc";
+      selectorEl.style.boxShadow = dark ? "0 2px 12px rgba(0,0,0,0.5)" : "0 2px 12px rgba(0,0,0,0.18)";
+      label.style.color = dark ? "#d1d5db" : "#666";
+      modelLabel.style.color = dark ? "#d1d5db" : "#666";
+
+      const controls = [select, modelSelect, commitBtn, revertBtn];
+      controls.forEach((el) => {
+        el.style.background = dark ? "#1f2937" : "#fff";
+        el.style.color = dark ? "#e5e7eb" : (el === commitBtn ? "#1d4ed8" : el === revertBtn ? "#b91c1c" : "#333");
+        if (el === commitBtn) {
+          el.style.border = dark ? "1px solid #60a5fa" : "1px solid #3b82f6";
+        } else if (el === revertBtn) {
+          el.style.border = dark ? "1px solid #f87171" : "1px solid #ef4444";
+        } else {
+          el.style.border = dark ? "1px solid #4b5563" : "1px solid #d0d0d0";
+        }
+      });
+    }
+
+    applySelectorTheme();
+    onThemeChange(applySelectorTheme);
+    // Poll as a fallback for theme toggles that don't mutate observed attrs/classes.
+    setInterval(applySelectorTheme, 600);
 
     // Load saved preference
     const saved = localStorage.getItem("agentation-selected-agent");
