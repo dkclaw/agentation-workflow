@@ -69,6 +69,29 @@ export default function MyPage() {
 - `autoSend={true}` sends annotations to the webhook automatically
 - Replace `localhost` with your server's IP if accessing remotely
 
+#### Dev-only guard (recommended)
+
+Wrap the `<Agentation>` component in a `NODE_ENV` check so it never ships to production:
+
+```tsx
+const isDev = process.env.NODE_ENV !== "production";
+
+return (
+  <>
+    <YourAppContent />
+    {isDev && (
+      <Agentation
+        key={`agentation-${remountKey}`}
+        webhookUrl="http://localhost:4848/webhook"
+        autoSend={true}
+      />
+    )}
+  </>
+);
+```
+
+Next.js, Vite, and CRA all set `NODE_ENV=production` during `npm run build` / `next build`, so the Agentation toolbar and its dependencies will be **tree-shaken out** of production bundles automatically.
+
 ---
 
 ### Option B: Plain HTML (no build step)
@@ -103,6 +126,45 @@ That's it. The script loads React + Agentation from CDN automatically.
   data-sse="http://192.168.1.50:4848/events"
   data-mcp="http://192.168.1.50:4747"
 ></script>
+```
+
+#### Keeping Agentation out of production (plain HTML)
+
+Since plain HTML has no build step or tree-shaking, you need to ensure the `<script>` tag doesn't ship to production. Options:
+
+**Option 1: Git-ignored include file (recommended)**
+
+Create a separate `agentation-dev.html` snippet and include it via your build/deploy process only in dev:
+
+```html
+<!-- agentation-dev.html — add to .gitignore or strip during deploy -->
+<script src="agentation-vanilla.js" data-webhook="http://localhost:4848/webhook"></script>
+```
+
+**Option 2: Server-side conditional**
+
+If using a templating engine (PHP, Jinja, EJS, etc.):
+
+```html
+<% if (process.env.NODE_ENV !== 'production') { %>
+  <script src="agentation-vanilla.js" data-webhook="http://localhost:4848/webhook"></script>
+<% } %>
+```
+
+**Option 3: CI/deploy strip**
+
+Add a step to your deploy pipeline that removes the Agentation script tag:
+
+```bash
+sed -i '/<script.*agentation-vanilla/d' index.html
+```
+
+**Option 4: Comment marker for easy toggle**
+
+```html
+<!-- DEV ONLY: Remove before production deploy -->
+<script src="agentation-vanilla.js" data-webhook="http://localhost:4848/webhook"></script>
+<!-- /DEV ONLY -->
 ```
 
 ---
@@ -212,3 +274,96 @@ curl -X POST http://localhost:4848/test-resolve \
 ```
 
 Check browser console for `[Agentation] Resolved IDs received:` log.
+
+---
+
+## Remote Feedback via Tailscale
+
+Tailscale lets you expose your dev server and webhook receiver to other devices on your private network — perfect for annotating from your laptop/phone while an AI agent on a remote server fixes the code.
+
+### Setup
+
+1. **Install Tailscale** on both machines (your local device and the dev server):
+   - [https://tailscale.com/download](https://tailscale.com/download)
+
+2. **Find your dev server's Tailscale IP**:
+   ```bash
+   tailscale ip -4
+   # Example output: 100.89.253.104
+   ```
+
+3. **Bind your dev server to all interfaces** (most frameworks do this with `--host`):
+   ```bash
+   # Next.js
+   next dev --hostname 0.0.0.0
+
+   # Vite
+   vite --host 0.0.0.0
+
+   # Plain HTML (Node server)
+   npx serve -l 3000 --cors
+
+   # Python
+   python3 -m http.server 3000 --bind 0.0.0.0
+   ```
+
+4. **Start the webhook receiver** (it already binds to `0.0.0.0`):
+   ```bash
+   cd /your/project && node webhook-receiver.mjs
+   ```
+
+5. **Update URLs to use the Tailscale IP**:
+
+   For React:
+   ```tsx
+   <Agentation
+     webhookUrl="http://100.89.253.104:4848/webhook"
+     autoSend={true}
+   />
+   ```
+   And in `agentation-hook.ts`:
+   ```typescript
+   const SSE_URL = "http://100.89.253.104:4848/events";
+   ```
+
+   For plain HTML:
+   ```html
+   <script
+     src="agentation-vanilla.js"
+     data-webhook="http://100.89.253.104:4848/webhook"
+   ></script>
+   ```
+
+6. **Open the page from your local device**:
+   ```
+   http://100.89.253.104:3000
+   ```
+
+### Typical Architecture
+
+```
+┌─────────────────────┐         ┌──────────────────────────────────┐
+│  Your Laptop/Phone  │         │  Remote Dev Server (Tailscale)   │
+│                     │  VPN    │                                  │
+│  Browser ──────────────────── │  Dev server (:3000)              │
+│  (annotate UI)      │         │  Webhook receiver (:4848)        │
+│                     │         │  Codex agent (auto-fix code)     │
+│  SSE ← resolved ───────────  │  SSE broadcast on completion     │
+└─────────────────────┘         └──────────────────────────────────┘
+```
+
+### With OpenClaw
+
+If you're using OpenClaw, the AI agent runs on the remote server and can:
+- Receive annotations via the webhook receiver
+- Spawn Codex to fix code automatically
+- The human only needs a browser — no dev tools on their device
+
+This is ideal for non-technical stakeholders reviewing UI: they annotate on their device, the AI fixes it on the server, and they refresh to see changes.
+
+### Security Notes
+
+- Tailscale traffic is encrypted end-to-end (WireGuard)
+- Only devices on your Tailscale network can access the dev server
+- The webhook receiver's CORS is set to `*` — this is fine for dev but restrict it if exposing beyond your Tailscale network
+- Never expose the webhook receiver to the public internet without authentication

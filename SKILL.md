@@ -66,8 +66,16 @@ export default function Page() {
 
 **Key points:**
 - `key={...remountKey}` is required — forces remount on resolution to clear annotations
+- Wrap in `process.env.NODE_ENV !== "production"` check so it's tree-shaken from prod builds
 - Update `webhookUrl` if the webhook receiver is on a different host/port
 - Update `SSE_URL` in `agentation-hook.ts` to match
+
+**Dev-only guard (important):**
+```tsx
+const isDev = process.env.NODE_ENV !== "production";
+// ... in JSX:
+{isDev && <Agentation key={...} webhookUrl="..." autoSend={true} />}
+```
 
 ### Step 2b: Plain HTML (no build step)
 
@@ -83,6 +91,8 @@ Add before `</body>`:
 ```
 
 No npm install needed. Loads React + Agentation from CDN automatically.
+
+**Important:** Remove this `<script>` tag before deploying to production. See [INSTALL.md]({baseDir}/INSTALL.md) for strategies (git-ignore, CI strip, server-side conditional).
 
 ## How It Works
 

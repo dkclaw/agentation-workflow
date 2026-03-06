@@ -16,9 +16,10 @@ import { Agentation } from "agentation";
 import { useCompletionListener } from "./agentation-hook";
 
 export default function Page() {
+  const isDev = process.env.NODE_ENV !== "production";
   const [remountKey, setRemountKey] = useState(0);
   const handleResolved = useCallback(() => setRemountKey((k) => k + 1), []);
-  useCompletionListener(handleResolved);
+  useCompletionListener(isDev ? handleResolved : () => {});
 
   return (
     <>
@@ -28,14 +29,16 @@ export default function Page() {
         <p>This is your normal page content.</p>
       </main>
 
-      {/* ---- Agentation toolbar ---- */}
-      <Agentation
-        key={`agentation-${remountKey}`}
-        webhookUrl="http://localhost:4848/webhook"
-        autoSend={true}
-        // Optional: enable MCP server sync
-        // mcpUrl="http://localhost:4747"
-      />
+      {/* ---- Agentation toolbar (dev only) ---- */}
+      {isDev && (
+        <Agentation
+          key={`agentation-${remountKey}`}
+          webhookUrl="http://localhost:4848/webhook"
+          autoSend={true}
+          // Optional: enable MCP server sync
+          // mcpUrl="http://localhost:4747"
+        />
+      )}
     </>
   );
 }
