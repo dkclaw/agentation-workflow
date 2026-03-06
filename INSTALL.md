@@ -122,6 +122,8 @@ That's it. The script loads React + Agentation from CDN automatically.
 | `data-sse` | No | Derived from webhook URL | SSE endpoint for auto-resolution |
 | `data-mcp` | No | — | MCP server URL (optional) |
 | `data-auto-send` | No | `true` | Auto-send annotations |
+| `data-auto-reload` | No | `false` | Auto-reload page after resolved annotations (plain HTML helper) |
+| `data-auto-reload-delay` | No | `1200` | Delay (ms) before auto-reload |
 
 **Example with all options:**
 ```html
@@ -130,6 +132,8 @@ That's it. The script loads React + Agentation from CDN automatically.
   data-webhook="http://192.168.1.50:4848/webhook"
   data-sse="http://192.168.1.50:4848/events"
   data-mcp="http://192.168.1.50:4747"
+  data-auto-reload="true"
+  data-auto-reload-delay="1200"
 ></script>
 ```
 
@@ -236,7 +240,7 @@ The receiver auto-detects project type (Next.js, Vite, or static HTML) and adjus
 3. **Batch window** — Waits 10s (configurable) to collect multiple annotations into one task
 4. **Agent spawns** — Codex runs in `--full-auto` mode against your project directory
 5. **Code changes** — Agent edits source files based on annotation descriptions
-6. **Hot reload** — Next.js/Vite auto-reload; plain HTML requires manual refresh
+6. **Hot reload** — Next.js/Vite auto-reload; plain HTML can use `data-auto-reload="true"` (or refresh manually)
 7. **Resolution broadcast** — When agent exits, resolved annotation IDs are sent via SSE
 8. **Annotations clear** — Browser removes resolved annotations from localStorage and remounts the toolbar
 9. **Session context is preserved** — Future annotations on the same page/agent include prior batch history, so follow-up requests ("undo previous change") keep context

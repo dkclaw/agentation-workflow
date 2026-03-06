@@ -87,10 +87,14 @@ Add before `</body>`:
 <script
   src="agentation-vanilla.js"
   data-webhook="http://localhost:4848/webhook"
+  data-auto-reload="true"
+  data-auto-reload-delay="1200"
 ></script>
 ```
 
 No npm install needed. Loads React + Agentation from CDN automatically.
+
+For plain HTML projects that don’t hot-reload, `data-auto-reload="true"` lets the page refresh automatically after resolved annotation updates.
 
 **Important:** Remove this `<script>` tag before deploying to production. See [INSTALL.md]({baseDir}/INSTALL.md) for strategies (git-ignore, CI strip, server-side conditional).
 
