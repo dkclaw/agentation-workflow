@@ -492,6 +492,11 @@
   let healthDotEl = null;
   let healthTextEl = null;
   let healthCheckTimer = null;
+  let gitWarnEl = null;
+  let gitWarnTextEl = null;
+  let gitWarnBtnEl = null;
+  let gitStatusTimer = null;
+  let lastGitStatus = null;
 
   function setHealthIndicator(ok, detail) {
     if (!healthEl || !healthDotEl || !healthTextEl) return;
@@ -507,6 +512,69 @@
       setHealthIndicator(!!res.ok, `GET ${agentApiUrl} → ${res.status}`);
     } catch (err) {
       setHealthIndicator(false, `GET ${agentApiUrl} failed: ${err?.message || "unknown error"}`);
+    }
+  }
+
+  function setGitWarning(status) {
+    lastGitStatus = status || null;
+    if (!gitWarnEl || !gitWarnTextEl || !gitWarnBtnEl) return;
+    if (!status || !status.hasUpstream) {
+      gitWarnEl.style.display = "none";
+      return;
+    }
+    const { ahead = 0, behind = 0 } = status;
+    if (!ahead && !behind) {
+      gitWarnEl.style.display = "none";
+      return;
+    }
+
+    gitWarnEl.style.display = "inline-flex";
+    const bits = [];
+    if (behind) bits.push(`${behind} behind`);
+    if (ahead) bits.push(`${ahead} ahead`);
+    gitWarnTextEl.textContent = `Git: ${bits.join(", ")}`;
+    gitWarnBtnEl.textContent = behind && ahead ? "Sync" : (behind ? "Pull" : "Push");
+  }
+
+  async function checkGitStatus() {
+    if (!baseUrl) return;
+    try {
+      const res = await fetch(`${baseUrl}/git/status`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || res.statusText);
+      setGitWarning(data);
+    } catch (err) {
+      if (gitWarnEl) gitWarnEl.style.display = "none";
+    }
+  }
+
+  async function runGitSyncAction() {
+    if (!lastGitStatus) return;
+    const call = async (url, payload) => {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {}),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || res.statusText);
+      return data;
+    };
+
+    const { ahead = 0, behind = 0 } = lastGitStatus;
+    try {
+      if (behind && ahead) {
+        await call(`${baseUrl}/git/pull`, { rebase: true, autostash: true });
+        await call(`${baseUrl}/git/push`, {});
+      } else if (behind) {
+        await call(`${baseUrl}/git/pull`, { rebase: true, autostash: true });
+      } else if (ahead) {
+        await call(`${baseUrl}/git/push`, {});
+      }
+      await checkGitStatus();
+      window.alert("Git sync complete ✅");
+    } catch (err) {
+      window.alert(`Git sync failed: ${err.message || "unknown error"}`);
     }
   }
 
@@ -682,6 +750,14 @@
     }
 
     function openCommitDialog() {
+      if (lastGitStatus && (lastGitStatus.ahead > 0 || lastGitStatus.behind > 0)) {
+        const proceed = window.confirm(`Your branch is ${lastGitStatus.behind || 0} behind and ${lastGitStatus.ahead || 0} ahead. Sync now before saving?`);
+        if (proceed) {
+          runGitSyncAction();
+          return;
+        }
+      }
+
       const overlay = document.createElement("div");
       overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:2147483646;display:flex;align-items:center;justify-content:center;";
 
@@ -743,6 +819,14 @@
     }
 
     async function openRewindDialog() {
+      if (lastGitStatus && (lastGitStatus.ahead > 0 || lastGitStatus.behind > 0)) {
+        const proceed = window.confirm(`Your branch is ${lastGitStatus.behind || 0} behind and ${lastGitStatus.ahead || 0} ahead. Sync now before rewind?`);
+        if (proceed) {
+          await runGitSyncAction();
+          return;
+        }
+      }
+
       const overlay = document.createElement("div");
       overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:2147483646;display:flex;align-items:center;justify-content:center;";
       const box = document.createElement("div");
@@ -844,6 +928,18 @@
     healthEl.appendChild(healthDotEl);
     healthEl.appendChild(healthTextEl);
 
+    gitWarnEl = document.createElement("span");
+    gitWarnEl.style.cssText = "display:none;align-items:center;gap:6px;margin-left:6px;padding:2px 8px;border-radius:999px;border:1px solid #f59e0b;background:#fffbeb;color:#92400e;font-size:11px;";
+    gitWarnTextEl = document.createElement("span");
+    gitWarnTextEl.textContent = "Git: diverged";
+    gitWarnBtnEl = document.createElement("button");
+    gitWarnBtnEl.type = "button";
+    gitWarnBtnEl.textContent = "Sync";
+    gitWarnBtnEl.style.cssText = "border:1px solid #f59e0b;border-radius:999px;background:#fff;padding:1px 7px;font-size:11px;color:#92400e;cursor:pointer;";
+    gitWarnBtnEl.addEventListener("click", runGitSyncAction);
+    gitWarnEl.appendChild(gitWarnTextEl);
+    gitWarnEl.appendChild(gitWarnBtnEl);
+
     selectorEl.appendChild(label);
     selectorEl.appendChild(select);
     selectorEl.appendChild(modelLabel);
@@ -853,6 +949,7 @@
     selectorEl.appendChild(commitBtn);
     selectorEl.appendChild(revertBtn);
     selectorEl.appendChild(healthEl);
+    selectorEl.appendChild(gitWarnEl);
     document.body.appendChild(selectorEl);
 
     function applySelectorTheme() {
@@ -869,6 +966,11 @@
         healthEl.style.background = dark ? "#111827" : "#fff";
         healthEl.style.border = dark ? "1px solid #374151" : "1px solid #d1d5db";
         healthEl.style.color = dark ? "#e5e7eb" : "#374151";
+      }
+      if (gitWarnEl) {
+        gitWarnEl.style.border = dark ? "1px solid #b45309" : "1px solid #f59e0b";
+        gitWarnEl.style.background = dark ? "#451a03" : "#fffbeb";
+        gitWarnEl.style.color = dark ? "#fcd34d" : "#92400e";
       }
       controls.forEach((el) => {
         el.style.background = dark ? "#1f2937" : "#fff";
@@ -935,6 +1037,10 @@
       if (healthCheckTimer) clearInterval(healthCheckTimer);
       checkReceiverHealth();
       healthCheckTimer = setInterval(checkReceiverHealth, 15000);
+
+      if (gitStatusTimer) clearInterval(gitStatusTimer);
+      checkGitStatus();
+      gitStatusTimer = setInterval(checkGitStatus, 30000);
     } else {
       setHealthIndicator(false, "No agent API URL configured");
     }

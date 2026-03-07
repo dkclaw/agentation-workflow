@@ -625,6 +625,8 @@ const server = http.createServer(async (req, res) => {
         "/git/restore-snapshot": { post: { summary: "Restore snapshot from commit" } },
         "/git/commit": { post: { summary: "Commit changes" } },
         "/git/auto-commit": { post: { summary: "Auto-generate commit message and commit" } },
+        "/git/pull": { post: { summary: "Pull latest changes (rebase+autostash)" } },
+        "/git/push": { post: { summary: "Push current branch" } },
         "/webhooks": {
           get: { summary: "List outbound webhooks" },
           post: { summary: "Register outbound webhook" },
@@ -856,8 +858,35 @@ const server = http.createServer(async (req, res) => {
       const branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd: PROJECT_DIR }).toString().trim();
       const porcelain = execSync("git status --porcelain", { cwd: PROJECT_DIR }).toString();
       const clean = porcelain.trim().length === 0;
+
+      // Refresh remote refs so ahead/behind is accurate
+      try { execSync("git fetch --all --prune", { cwd: PROJECT_DIR, stdio: "pipe" }); } catch {}
+
+      let upstream = "";
+      let hasUpstream = false;
+      let ahead = 0;
+      let behind = 0;
+      try {
+        upstream = execSync("git rev-parse --abbrev-ref --symbolic-full-name @{u}", { cwd: PROJECT_DIR, stdio: "pipe" }).toString().trim();
+        hasUpstream = !!upstream;
+        if (hasUpstream) {
+          const counts = execSync("git rev-list --left-right --count HEAD...@{u}", { cwd: PROJECT_DIR, stdio: "pipe" }).toString().trim();
+          const [a, b] = counts.split(/\s+/).map((n) => parseInt(n, 10) || 0);
+          ahead = a;
+          behind = b;
+        }
+      } catch {}
+
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ branch, clean, changedFiles: porcelain.split("\n").filter(Boolean).length }));
+      res.end(JSON.stringify({
+        branch,
+        clean,
+        changedFiles: porcelain.split("\n").filter(Boolean).length,
+        hasUpstream,
+        upstream,
+        ahead,
+        behind,
+      }));
     } catch (err) {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: `git status failed: ${err.message}` }));
@@ -1042,6 +1071,41 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: err.message }));
       }
     });
+    return;
+  }
+
+  if (req.url === "/git/pull" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      try {
+        const { rebase = true, autostash = true } = JSON.parse(body || "{}");
+        const cmd = `git pull${rebase ? " --rebase" : ""}${autostash ? " --autostash" : ""}`;
+        execSync(cmd, { cwd: PROJECT_DIR, stdio: "pipe" });
+        broadcastGitResult("success", "Pulled latest changes from remote");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, pulled: true, cmd }));
+      } catch (err) {
+        broadcastGitResult("error", `Git pull failed: ${err.message}`);
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (req.url === "/git/push" && req.method === "POST") {
+    try {
+      const out = pushWithAutoSync();
+      const detail = `Pushed current branch${out.autosynced ? " (auto-synced with remote)" : ""}`;
+      broadcastGitResult("success", detail);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, pushed: true, autosynced: out.autosynced }));
+    } catch (err) {
+      broadcastGitResult("error", `Git push failed: ${err.message}`);
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: err.message }));
+    }
     return;
   }
 
